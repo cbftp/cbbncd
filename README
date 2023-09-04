@@ -3,7 +3,7 @@
 |  _| . | . |   |  _| . |
 |___|___|___|_|_|___|___|
 
-cbbncd-0.8
+cbbncd-0.9
 
 This is a simple FTP bouncer.
 It works with glftpd and any other ftpd that supports IDNT.
@@ -23,6 +23,8 @@ removed.
 
 Changelog:
 
+0.9 (2018-10-01):
+  - Fixed a bug with ident replies containing trailing newlines
 0.8 (2018-01-12):
   - Fixed memory leaks
 0.7 (2017-11-02):

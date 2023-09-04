@@ -29,9 +29,8 @@ void Ident::FDConnected(int) {
 
 void Ident::FDData(int, char * buf, unsigned int buflen) {
   std::string identstr(buf, buflen);
-  size_t len = identstr.length();
-  if (len > 2 && identstr[len - 2] == '\r') {
-    identstr = identstr.substr(0, len - 2);
+  while (identstr.length() > 1 && (identstr[identstr.length() - 1] == '\n' || identstr[identstr.length() - 1] == '\r')) {
+    identstr = identstr.substr(0, identstr.length() - 1);
   }
   if (identstr.find("USERID") != std::string::npos) {
     size_t pos = identstr.rfind(":");
