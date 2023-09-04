@@ -1219,7 +1219,10 @@ std::list<std::pair<std::string, std::string>> IOManager::listInterfaces(bool ip
     getLogger()->log("IOManager", std::string("Failed to list network interfaces: ") + util::getStrError(errno), LogLevel::ERROR);
     return addrs;
   }
-  for (ifa = ifaddr; ifa != nullptr && ifa->ifa_addr != nullptr; ifa = ifa->ifa_next) {
+  for (ifa = ifaddr; ifa != nullptr; ifa = ifa->ifa_next) {
+    if (ifa->ifa_addr == nullptr) {
+      continue;
+    }
     int family = ifa->ifa_addr->sa_family;
     if (family == AF_INET && ipv4) {
       s = getnameinfo(ifa->ifa_addr, sizeof(struct sockaddr_in), host, NI_MAXHOST, nullptr, 0, NI_NUMERICHOST);

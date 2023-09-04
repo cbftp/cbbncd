@@ -87,7 +87,7 @@ void parseData(const std::string& data, int& listenport, std::string& host, int&
     std::string key = param.substr(0, sep);
     std::string value = param.substr(sep + 1);
     if (key == "port") {
-      port = std::stol(value);
+      listenport = std::stol(value);
     }
     else if (key == "host") {
       size_t portsep = value.find(":");

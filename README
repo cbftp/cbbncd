@@ -33,6 +33,9 @@ compilation.
 
 Changelog:
 
+0.15 (2021-03-12):
+  - Fixed a bug from 0.14 where the port setting was ignored
+  - Fixed a bug with TUN interfaces preventing interface matching
 0.14 (2021-03-12):
   - Added support for binding to a specific IP or interface
   - Improved login time by connecting to server while waiting for ident
