@@ -3,7 +3,7 @@
 |  _| . | . |   |  _| . |
 |___|___|___|_|_|___|___|
 
-cbbncd-0.20
+cbbncd-0.21
 
 This is an FTP control channel+traffic bouncer.
 It works with glftpd and any other ftpd that supports IDNT.
@@ -40,6 +40,8 @@ compilation.
 
 Changelog:
 
+0.21 (2022-10-10):
+  - Some changes for better openssl version compatibility
 0.20 (2022-08-28):
   - Fixed wrong ip in PORT rewrite when different interfaces are used
     for client and site connections

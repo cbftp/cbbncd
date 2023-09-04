@@ -45,7 +45,7 @@ application: core
 	$(eval LASTCERTFILE := $(shell if [ -n "$(LASTCERTFILE)" ]; then echo $(LASTCERTFILE); else echo ""; fi))
 	$(eval USECERTFILE := $(shell if [ "$(USETRAFFIC)" == "true" ] && [ "$(USEAUTOGENCERT)" == "false" ]; then if [ -z "$(CERTFILE)" ] && [ -z "$(DATA)" ]; then echo $$(read -p "Certificate file [$(LASTCERTFILE)]: "; if [ -n "$$REPLY" ]; then echo $$REPLY; else echo $(LASTCERTFILE); fi); else echo $(CERTFILE); fi; else echo $(LASTCERTFILE); fi))
 	$(eval GENKEY := $(shell if [ "$(USETRAFFIC)" == "true" ] && ([ "$(USEAUTOGENCERT)" == "true" ] || [ -z "$(USECERTFILE)" ]); then openssl ecparam -outform der -name prime256v1 -genkey | openssl base64 -A; else echo ""; fi))
-	$(eval GENCERT := $(shell if [ -n "$(GENKEY)" ]; then echo $(GENKEY) | openssl base64 -d | openssl req -new -key - -keyform der -x509 -nodes -days 365 -outform der -subj '/CN=AQ/' | openssl base64 -A; else echo -n ""; fi))
+	$(eval GENCERT := $(shell if [ -n "$(GENKEY)" ]; then echo $(GENKEY) | openssl base64 -d | openssl req -new -key /dev/stdin -keyform der -x509 -nodes -days 365 -outform der -subj '/CN=AQ/' | openssl base64 -A; else echo -n ""; fi))
 	$(eval USECERT := $(shell if [ "$(USEAUTOGENCERT)" == "false" ]; then openssl x509 -in $(USECERTFILE) -outform der | openssl base64 -A; else echo $(GENCERT); fi))
 	$(eval USEKEY := $(shell if [ "$(USEAUTOGENCERT)" == "false" ] && [ -n "$(USECERTFILE)" ]; then openssl pkey -in $(USECERTFILE) -outform der 2>/dev/null | openssl base64 -A; fi))
 	$(eval LASTKEYFILE := $(shell cat .last 2>/dev/null|grep 'keyfile='|cut -d '=' -f 2))
