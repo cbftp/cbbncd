@@ -3,7 +3,7 @@
 |  _| . | . |   |  _| . |
 |___|___|___|_|_|___|___|
 
-cbbncd-0.19
+cbbncd-0.20
 
 This is an FTP control channel+traffic bouncer.
 It works with glftpd and any other ftpd that supports IDNT.
@@ -20,8 +20,12 @@ in the build directory.
 When compilation is finished, everything except the executable can be
 removed.
 
-To add multiple site addresses or bind addresses (when specifying both ipv4
-and ipv6 for example), just separate them with space.
+To add multiple site addresses or bind addresses (when specifying both IPv4
+and IPv6 for example), just separate them with space, or comma, or semicolon.
+Example: ftp.example.com:12345 ftp2.example.com:12345
+
+To force IPv4 or IPv6 for a site address, add a (4) or (6) in front of it.
+Example: (6)ftp.example.com:12345
 
 The connection details can also be specified on the command line when
 compiling, to avoid interactive questions. Example:
@@ -36,10 +40,13 @@ compilation.
 
 Changelog:
 
+0.20 (2022-08-28):
+  - Fixed wrong ip in PORT rewrite when different interfaces are used
+    for client and site connections
 0.19 (2022-08-17):
   - Workaround for IPv6 address in IDNT
   - Added support for providing multiple site addresses and round-robin
-    between them
+    between them (add multiple by separating with space, see above)
   - Added support for disabling IDNT completely to allow chaining
     bouncers
 0.18 (2022-08-16):

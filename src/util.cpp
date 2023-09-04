@@ -43,7 +43,7 @@ std::vector<std::string> splitVec(const std::string& in, const std::string& sep)
 }
 
 std::string ipFormat(Core::AddressFamily addrfam, const std::string addr) {
-  return addrfam == Core::AddressFamily::IPV4 ? addr : "[" + addr + "]";
+  return addrfam == Core::AddressFamily::IPV6 ? "[" + addr + "]" : addr;
 }
 
 }

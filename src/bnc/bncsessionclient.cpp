@@ -316,12 +316,12 @@ bool BncSessionClient::sendData(const char* data, unsigned int datalen) {
       int boundport = tbnc->activate(siteaddrfam, Core::AddressFamily::IPV4, addr, port, sessiontag);
       if (boundport != -1) {
         if (siteaddrfam == Core::AddressFamily::IPV4) {
-          modifiedcommand = commandwords[0] + " " + toPASVString(ifaddr4, boundport);
+          modifiedcommand = commandwords[0] + " " + toPASVString(siteifaddr, boundport);
           global->log("[" + sessiontag + "] Rewriting PORT " + addr + ":" + std::to_string(port) +
-            " -> PORT " + ifaddr4 + ":" + std::to_string(boundport));
+            " -> PORT " + siteifaddr + ":" + std::to_string(boundport));
         }
         else {
-          modifiedcommand = "EPRT " + toExtendedPASVString(Core::AddressFamily::IPV6, ifaddr6, boundport);
+          modifiedcommand = "EPRT " + toExtendedPASVString(Core::AddressFamily::IPV6, siteifaddr, boundport);
           global->log("[" + sessiontag + "] Rewriting PORT " + addr + ":" + std::to_string(port) + " -> " + modifiedcommand);
           responsecatch = ResponseCatch::EPRT;
           origincatch = OriginCatch::PORT;

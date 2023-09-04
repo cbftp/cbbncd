@@ -121,6 +121,13 @@ std::list<Address> parseAddresses(std::string addrstr) {
   size_t pos;
   while ((pos = addrstr.find(";")) != std::string::npos) addrstr[pos] = ' ';
   while ((pos = addrstr.find(",")) != std::string::npos) addrstr[pos] = ' ';
+  while (true) {
+    size_t pos = addrstr.find("  ");
+    if (pos == std::string::npos) {
+      break;
+    }
+    addrstr.erase(pos, 1);
+  }
   std::list<std::string> addrlist = util::trim(util::split(addrstr));
   for (const std::string& address : addrlist) {
     addresses.push_back(parseAddress(address));
