@@ -103,7 +103,7 @@ int main(int argc, char ** argv) {
     }
   }
   std::string data = DATA;
-  if (data.find(":") == std::string::npos) {
+  if (data.find(";") == std::string::npos) {
     BinaryData passphrase = getPassphrase();
     BinaryData decodeddata;
     Crypto::base64Decode(BinaryData(data.begin(), data.end()), decodeddata);

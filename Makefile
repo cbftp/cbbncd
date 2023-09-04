@@ -18,7 +18,7 @@ application: core
 	$(eval IDENT := $(shell read -p "Ident lookup [$(LASTIDENT)]: "; if [ -n "$$REPLY" ]; then if [ "$$REPLY" != "n" ]; then echo "y"; else echo "n"; fi; else echo "$(LASTIDENT)"; fi))
 	$(eval ENCRYPT := $(shell read -p "Encrypt data [y]: "; if [ -z "$$REPLY" ] || [ "$$REPLY" != "n" ]; then echo "1"; else echo ""; fi))
 	$(eval DATA := $(PORT);$(HOST);$(IDENT))
-	$(eval ENCDATA := $(shell if [ -n "$(ENCRYPT)" ]; then echo "$(DATA)" | $(AES256_CMD); fi))
+	$(eval ENCDATA := $(shell if [ -n "$(ENCRYPT)" ]; then echo -n "$(DATA)" | $(AES256_CMD); fi))
 	@rm -f .last
 	@if [ -z "$(ENCRYPT)" ] || [ -z "$(ENCDATA)" ]; then echo "$(DATA)" > .last; fi
 	@if [ -n "$(ENCRYPT)" ] && [ -z "$(ENCDATA)" ]; then echo -e "WARNING: Continuing without encryption."; fi
