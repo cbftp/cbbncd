@@ -1,0 +1,43 @@
+     _   _             _ 
+ ___| |_| |_ ___ ___ _| |
+|  _| . | . |   |  _| . |
+|___|___|___|_|_|___|___|
+
+cbbncd-0.8
+
+This is a simple FTP bouncer.
+It works with glftpd and any other ftpd that supports IDNT.
+The connection data is embedded into the executable and is (optionally)
+encrypted with AES-256.
+
+Build dependencies: make g++ openssl libssl-dev libc6-dev
+
+To compile, run: make
+You will be asked for connection details during compilation.
+
+When encryption is selected, no potentially sensitive data will be stored
+in the build directory.
+When compilation is finished, everything except the executable can be
+removed.
+
+
+Changelog:
+
+0.8 (2018-01-12):
+  - Fixed memory leaks
+0.7 (2017-11-02):
+  - Added a missing include
+0.6 (2017-06-01):
+  - Fixed a session handling bug that causes degraded performance over time
+0.5 (2017-04-20):
+  - Fixed a bug with ident responses containing spaces
+0.4 (2016-12-30):
+  - The passphrase entered during build is read with openssl directly to
+    avoid problems with special characters
+0.3 (2016-12-20):
+  - Updated core lib because of a bug in socket priority handling
+0.2 (2016-12-17):
+  - Added encryption support
+  - Updated core lib because of fixes around socket load management
+0.1 (2016-12-06):
+  - First release
