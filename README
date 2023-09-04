@@ -3,9 +3,9 @@
 |  _| . | . |   |  _| . |
 |___|___|___|_|_|___|___|
 
-cbbncd-0.16
+cbbncd-0.17
 
-This is an FTP control channel bouncer.
+This is an FTP control channel+traffic bouncer.
 It works with glftpd and any other ftpd that supports IDNT.
 The connection data is embedded into the executable and is (optionally)
 encrypted with AES-256.
@@ -22,7 +22,7 @@ removed.
 
 The connection details can also be specified on the command line when
 compiling, to avoid interactive questions. Example:
-make PORT=65432 HOST=ftp.example.com:21 IDENT=n
+make PORT=65432 HOST=ftp.example.com:21 IDENT=false BIND=false TRAFFIC=false
 This will compile without interaction and with data encryption disabled.
 For non-interactive compilation with encryption enabled, the DATA parameter
 can be used:
@@ -33,6 +33,9 @@ compilation.
 
 Changelog:
 
+0.17 (2022-08-16):
+  - Added support for traffic bouncing
+  - Added IPv6 support
 0.16 (2021-03-19):
   - Switched to a newer encryption key derivation method if available
 0.15 (2021-03-12):

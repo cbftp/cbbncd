@@ -13,6 +13,7 @@ LINK = src/core/libcore.a -lssl -lpthread -lcrypto
 all: application
 
 application: core
+# This mess is unreadable. I really really wanted to put the config in the Makefile. I'm sorry.
 	$(eval LASTPORT := $(shell cat .last 2>/dev/null|grep 'port='|cut -d '=' -f 2))
 	$(eval LASTPORT := $(shell if [ -n "$(LASTPORT)" ]; then echo $(LASTPORT); else echo "65432"; fi))
 	$(eval USEPORT := $(shell if [ -z "$(PORT)" ] && [ -z "$(DATA)" ]; then echo $$(read -p "Listen port [$(LASTPORT)]: "; if [ -n "$$REPLY" ]; then echo $$REPLY; else echo $(LASTPORT); fi); else echo $(PORT); fi))
@@ -28,14 +29,37 @@ application: core
 	$(eval LASTIPIF := $(shell cat .last 2>/dev/null|grep 'ipif='|cut -d '=' -f 2))
 	$(eval LASTIPIF := $(shell if [ -n "$(LASTIPIF)" ]; then echo $(LASTIPIF); else echo "0.0.0.0"; fi))
 	$(eval USEIPIF := $(shell if [ "$(USEBIND)" == "true" ]; then if [ -z "$(IPIF)" ] && [ -z "$(DATA)" ]; then echo $$(read -p "IP or network interface [$(LASTIPIF)]: "; if [ -n "$$REPLY" ]; then echo $$REPLY; else echo $(LASTIPIF); fi); else echo $(IPIF); fi; else echo $(LASTIPIF); fi))
-	$(eval ENCRYPT := $(shell if [ -z "$(DATA)" ] && ( [ -z "$(PORT)" ] || [ -z "$(HOST)" ] || [ -z "$(IDENT)" ] ); then echo $$(read -p "Encrypt data [y]: "; if [ -z "$$REPLY" ] || [ "$$REPLY" != "n" ]; then echo "1"; else echo ""; fi); fi))
-	$(eval AGGDATA := port=$(USEPORT);host=$(USEHOST);ident=$(USEIDENT);bind=$(USEBIND);ipif=$(USEIPIF))
+	$(eval LASTTRAFFIC := $(shell cat .last 2>/dev/null|grep 'traffic='|cut -d '=' -f 2))
+	$(eval LASTTRAFFIC := $(shell if [ -z "$(LASTTRAFFIC)" ] || [ "$(LASTTRAFFIC)" != "true" ]; then echo "false"; else echo "true"; fi))
+	$(eval USETRAFFIC := $(shell if [ -z "$(TRAFFIC)" ] && [ -z "$(DATA)" ]; then echo $$(read -p "Bounce traffic [$(shell if [ $(LASTTRAFFIC) == "false" ]; then echo "n"; else echo "y"; fi)]: "; if [ -n "$$REPLY" ]; then if [ "$$REPLY" != "n" ]; then echo "true"; else echo "false"; fi; else echo "$(LASTTRAFFIC)"; fi); else echo $(TRAFFIC); fi))
+	$(eval LASTPASVPORTRANGE := $(shell cat .last 2>/dev/null|grep 'pasvportrange='|cut -d '=' -f 2))
+	$(eval LASTPASVPORTRANGE := $(shell if [ -n "$(LASTPASVPORTRANGE)" ]; then echo $(LASTPASVPORTRANGE); else echo "50000-50100"; fi))
+	$(eval USEPASVPORTRANGE := $(shell if [ "$(USETRAFFIC)" == "true" ]; then if [ -z "$(PASVPORTRANGE)" ] && [ -z "$(DATA)" ]; then echo $$(read -p "Passive port range [$(LASTPASVPORTRANGE)]: "; if [ -n "$$REPLY" ]; then echo $$REPLY; else echo $(LASTPASVPORTRANGE); fi); else echo $(PASVPORTRANGE); fi; else echo $(LASTPASVPORTRANGE); fi))
+	$(eval LASTAUTOGENCERT := $(shell cat .last 2>/dev/null|grep 'autogencert='|cut -d '=' -f 2))
+	$(eval LASTAUTOGENCERT := $(shell if [ -z "$(LASTAUTOGENCERT)" ] || [ "$(LASTAUTOGENCERT)" != "false" ]; then echo "true"; else echo "false"; fi))
+	$(eval USEAUTOGENCERT := $(shell if [ "$(USETRAFFIC)" == "true" ] && ([ -z "$(AUTOGENCERT)" ] && [ -z "$(DATA)" ]); then echo $$(read -p "Auto-generate private key and certificate [$(shell if [ $(LASTAUTOGENCERT) == "false" ]; then echo "n"; else echo "y"; fi)]: "; if [ -n "$$REPLY" ]; then if [ "$$REPLY" != "n" ]; then echo "true"; else echo "false"; fi; else echo "$(LASTAUTOGENCERT)"; fi); else echo $(AUTOGENCERT); fi))
+	$(eval LASTCERTFILE := $(shell cat .last 2>/dev/null|grep 'certfile='|cut -d '=' -f 2))
+	$(eval LASTCERTFILE := $(shell if [ -n "$(LASTCERTFILE)" ]; then echo $(LASTCERTFILE); else echo ""; fi))
+	$(eval USECERTFILE := $(shell if [ "$(USETRAFFIC)" == "true" ] && [ "$(USEAUTOGENCERT)" == "false" ]; then if [ -z "$(CERTFILE)" ] && [ -z "$(DATA)" ]; then echo $$(read -p "Certificate file [$(LASTCERTFILE)]: "; if [ -n "$$REPLY" ]; then echo $$REPLY; else echo $(LASTCERTFILE); fi); else echo $(CERTFILE); fi; else echo $(LASTCERTFILE); fi))
+	$(eval GENKEY := $(shell if [ "$(USETRAFFIC)" == "true" ] && ([ "$(USEAUTOGENCERT)" == "true" ] || [ -z "$(USECERTFILE)" ]); then openssl ecparam -outform der -name prime256v1 -genkey | openssl base64 -A; else echo ""; fi))
+	$(eval GENCERT := $(shell if [ -n "$(GENKEY)" ]; then echo $(GENKEY) | openssl base64 -d | openssl req -new -key - -keyform der -x509 -nodes -days 365 -outform der -subj '/CN=AQ/' | openssl base64 -A; else echo -n ""; fi))
+	$(eval USECERT := $(shell if [ "$(USEAUTOGENCERT)" == "false" ]; then openssl x509 -in $(USECERTFILE) -outform der | openssl base64 -A; else echo $(GENCERT); fi))
+	$(eval USEKEY := $(shell if [ "$(USEAUTOGENCERT)" == "false" ] && [ -n "$(USECERTFILE)" ]; then openssl pkey -in $(USECERTFILE) -outform der 2>/dev/null | openssl base64 -A; fi))
+	$(eval LASTKEYFILE := $(shell cat .last 2>/dev/null|grep 'keyfile='|cut -d '=' -f 2))
+	$(eval LASTKEYFILE := $(shell if [ -n "$(LASTKEYFILE)" ]; then echo $(LASTKEYFILE); else echo ""; fi))
+	$(eval USEKEYFILE := $(shell if [ "$(USETRAFFIC)" == "true" ] && [ "$(USEAUTOGENCERT)" == "false" ] && [ -n "$(USECERTFILE)" ] && [ -z $(USEKEY) ]; then if [ -z "$(KEYFILE)" ] && [ -z "$(DATA)" ]; then echo $$(read -p "Private key file [$(LASTKEYFILE)]: "; if [ -n "$$REPLY" ]; then echo $$REPLY; else echo $(LASTKEYFILE); fi); else echo $(KEYFILE); fi; else echo ""; fi))
+	$(eval USEKEY := $(shell if [ -z "$(USEKEY)" ] && [ -n "$(USEKEYFILE)" ]; then openssl pkey -in $(USEKEYFILE) -outform der | openssl base64 -A; else echo $(USEKEY); fi))
+	$(eval USEKEY := $(shell if [ -z "$(USEKEY)" ] && [ -n "$(GENKEY)" ]; then echo $(GENKEY); else echo $(USEKEY); fi))
+	@if [ "$(USETRAFFIC)" == "true" ] && [ -z "$(USEKEY)" ]; then echo -e "ERROR: No private key found."; exit 1; fi
+	$(eval ENCRYPT := $(shell if ( [ "$(USETRAFFIC)" == "false" ] || [ -n "$(USEKEY)" ]) && [ -z "$(DATA)" ] && ( [ -z "$(PORT)" ] || [ -z "$(HOST)" ] || [ -z "$(IDENT)" ] || [ -z "$(IPIF)" ] || [ -z "$(TRAFFIC)" ]); then echo $$(read -p "Encrypt data [y]: "; if [ -z "$$REPLY" ] || [ "$$REPLY" != "n" ]; then echo "1"; else echo ""; fi); fi))
+	$(eval LASTDATA := port=$(USEPORT);host=$(USEHOST);ident=$(USEIDENT);bind=$(USEBIND);ipif=$(USEIPIF);traffic=$(USETRAFFIC);pasvportrange=$(USEPASVPORTRANGE);autogencert=$(USEAUTOGENCERT);certfile=$(USECERTFILE);keyfile=$(USEKEYFILE))
+	$(eval AGGDATA := port=$(USEPORT);host=$(USEHOST);ident=$(USEIDENT);bind=$(USEBIND);ipif=$(USEIPIF);traffic=$(USETRAFFIC);pasvportrange=$(USEPASVPORTRANGE);cert=$(USECERT);key=$(USEKEY))
 	$(eval ENCDATA := $(shell if [ -n "$(ENCRYPT)" ]; then echo -n "$(AGGDATA)" | $(AES256_CMD); fi))
 	@rm -f .last
-	@if [ -z "$(DATA)" ] && ( [ -z "$(ENCRYPT)" ] || [ -z "$(ENCDATA)" ] ); then echo "$(AGGDATA)" | sed s/\;/\\n/g > .last; fi
+	@if [ -z "$(DATA)" ] && ( [ -z "$(ENCRYPT)" ] || [ -z "$(ENCDATA)" ] ); then echo "$(LASTDATA)" | sed s/\;/\\n/g > .last; fi
 	@if [ -n "$(ENCRYPT)" ] && [ -z "$(ENCDATA)" ]; then echo -e "WARNING: Proceeding without encryption."; fi
 	$(eval DATA := $(shell if [ -z "$(DATA)" ]; then echo $$(if [ -n "$(ENCDATA)" ]; then echo $(ENCDATA); else echo "$(AGGDATA)"; fi); fi))
-	g++ $(ALLFLAGS) -o cbbncd -DBNCDATA="\"$(DATA)\"" $(wildcard src/*.cpp src/bnc/*.cpp) $(LINK)
+	g++ $(ALLFLAGS) -g -o cbbncd -DBNCDATA="\"$(DATA)\"" $(wildcard src/*.cpp src/bnc/*.cpp src/ftp/*.cpp) $(LINK)
 
 core:
 	@+$(MAKE) -C src/core

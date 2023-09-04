@@ -3,13 +3,14 @@
 #include <string>
 
 #include "../core/eventreceiver.h"
+#include "../core/types.h"
 
 class BncSession;
 
 class Ident : private Core::EventReceiver {
 public:
   Ident(BncSession* bncsession);
-  void activate(const std::string& sourcehost, int sourceport, int targetport);
+  void activate(const std::string& sessiontag, Core::AddressFamily sourceaddrfam, const std::string& sourcehost, int sourceport, int targetport);
   void close();
 private:
   void FDConnected(int sockid) override;

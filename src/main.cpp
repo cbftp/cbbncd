@@ -15,18 +15,33 @@
 #include "core/workmanager.h"
 #include "core/tickpoke.h"
 #include "core/iomanager.h"
+#include "core/sslmanager.h"
+#include "core/types.h"
 
 #include "bnc/bnc.h"
 
+#include "address.h"
 #include "crypto.h"
 #include "globalcontext.h"
+#include "listenportmanager.h"
+#include "util.h"
 
-int str2Int(std::string str) {
-  int num;
-  std::istringstream ss(str);
-  ss >> num;
-  return num;
-}
+namespace {
+
+struct Configuration {
+  int listenport = 65432;
+  std::string host = "ftp.example.com";
+  int port = 21;
+  Core::AddressFamily addrfam;
+  bool ident = true;
+  bool bind = false;
+  std::string ipif = "0.0.0.0";
+  bool traffic = false;
+  int pasvportfirst = 50000;
+  int pasvportlast = 50100;
+  std::string cert;
+  std::string key;
+};
 
 void showInput(bool show) {
   termios tty;
@@ -67,58 +82,49 @@ void daemonize() {
   open("/dev/null", O_WRONLY);
 }
 
-std::list<std::string> split(const std::string& in, const std::string& sep) {
-  std::list<std::string> out;
-  size_t start = 0;
-  size_t end;
-  size_t seplength = sep.length();
-  while ((end = in.find(sep, start)) != std::string::npos) {
-    out.push_back(in.substr(start, end - start));
-    start = end + seplength;
-  }
-  out.push_back(in.substr(start));
-  return out;
-}
-
-void parseData(const std::string& data, int& listenport, std::string& host, int& port, bool& ident, bool& bind, std::string& ipif) {
-  std::list<std::string> params = split(data, ";");
+Configuration parseData(const std::string& data) {
+  Configuration cfg;
+  std::list<std::string> params = util::split(data, ";");
   for (const std::string& param : params) {
     size_t sep = param.find("=");
     std::string key = param.substr(0, sep);
     std::string value = param.substr(sep + 1);
     if (key == "port") {
-      listenport = std::stol(value);
+      cfg.listenport = std::stol(value);
     }
     else if (key == "host") {
-      size_t portsep = value.find(":");
-      port = 21;
-      if (portsep != std::string::npos) {
-        host = value.substr(0, portsep);
-        port = std::stol(value.substr(portsep + 1));
-      }
-      else {
-        host = value;;
-      }
+      Address addr = parseAddress(value);
+      cfg.addrfam = addr.addrfam;
+      cfg.host = addr.host;
+      cfg.port = addr.port;
     }
     else if (key == "ident") {
-      ident = value == "true";
+      cfg.ident = value == "true";
     }
     else if (key == "bind") {
-      bind = value == "true";
+      cfg.bind = value == "true";
     }
     else if (key == "ipif") {
-      ipif = value;
+      cfg.ipif = value;
+    }
+    else if (key == "traffic") {
+      cfg.traffic = value == "true";
+    }
+    else if (key == "pasvportrange") {
+      std::list<std::string> tokens = util::split(value, "-");
+      cfg.pasvportfirst = std::stol(tokens.front());
+      cfg.pasvportlast = std::stol(tokens.back());
+    }
+    else if (key == "cert") {
+      cfg.cert = value;
+    }
+    else if (key == "key") {
+      cfg.key = value;
     }
   }
+  return cfg;
 }
 
-bool isAscii(const Core::BinaryData& data) {
-  for (unsigned int i = 0; i < data.size(); ++i) {
-    if (data[i] >= 128) {
-      return false;
-    }
-  }
-  return true;
 }
 
 int main(int argc, char** argv) {
@@ -139,22 +145,13 @@ int main(int argc, char** argv) {
     Crypto::base64Decode(Core::BinaryData(data.begin(), data.end()), decodeddata);
     Core::BinaryData decrypteddata;
     Crypto::decrypt(decodeddata, passphrase, decrypteddata);
-    if (!isAscii(decrypteddata)) {
-      Crypto::decryptOld(decodeddata, passphrase, decrypteddata);
-      if (!isAscii(decrypteddata)) {
-        std::cerr << "Error: Passphrase invalid. Exiting." << std::endl;
-        exit(1);
-      }
+    if (!Crypto::isMostlyASCII(decrypteddata)) {
+      std::cerr << "Error: Passphrase invalid. Exiting." << std::endl;
+      exit(1);
     }
     data = std::string(decrypteddata.begin(), decrypteddata.end());
   }
-  int listenport = 65432;
-  std::string host = "ftp.example.com";
-  int port = 21;
-  bool ident = true;
-  bool bind = false;
-  std::string ipif = "0.0.0.0";
-  parseData(data, listenport, host, port, ident, bind, ipif);
+  Configuration cfg = parseData(data);
 
   if (daemon) {
     daemonize();
@@ -162,30 +159,41 @@ int main(int argc, char** argv) {
   else {
     global->setVerbose(true);
     global->log("Starting in verbose foreground mode. Use -d to start in daemon mode.");
+    std::string traffic = cfg.traffic ? "enabled" : "disabled";
+    global->log("Traffic bouncing is " + traffic);
   }
   Core::WorkManager* wm = new Core::WorkManager();
   Core::TickPoke* tp = new Core::TickPoke(*wm);
   Core::IOManager* iom = new Core::IOManager(*wm, *tp);
-  if (bind) {
+  if (cfg.bind) {
     std::list<std::pair<std::string, std::string>> ifs = iom->listInterfaces();
     bool isif = false;
     for (const std::pair<std::string, std::string>& interface : ifs) {
-      if (ipif == interface.first) {
+      if (cfg.ipif == interface.first) {
         isif = true;
         break;
       }
     }
     if (isif) {
-      iom->setBindInterface(ipif);
+      iom->setBindInterface(cfg.ipif);
     }
     else {
-      iom->setBindAddress(ipif);
+      iom->setBindAddress(cfg.ipif);
     }
   }
   global->linkComponents(wm, iom, tp);
 
-  new Bnc(listenport, host, port, ident);
+  std::shared_ptr<ListenPortManager> lpm = std::make_shared<ListenPortManager>(cfg.pasvportfirst, cfg.pasvportlast);
+  global->linkComponents(lpm);
+  std::shared_ptr<Bnc> bnc = std::make_shared<Bnc>(cfg.listenport, cfg.addrfam, cfg.host, cfg.port, cfg.ident, cfg.traffic, cfg.pasvportfirst, cfg.pasvportlast);
   wm->init("cbbncd");
   iom->init("cbbncd");
+  if (!cfg.cert.empty() && !cfg.key.empty()) {
+    Core::BinaryData certdata;
+    Core::BinaryData keydata;
+    Crypto::base64Decode(Core::BinaryData(cfg.cert.begin(), cfg.cert.end()), certdata);
+    Crypto::base64Decode(Core::BinaryData(cfg.key.begin(), cfg.key.end()), keydata);
+    Core::SSLManager::addCertKeyPair(keydata, certdata);
+  }
   tp->tickerLoop();
 }

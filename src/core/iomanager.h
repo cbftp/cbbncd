@@ -383,7 +383,7 @@ private:
   void handleExternalIn(SocketInfo& socketinfo);
   void handleTCPConnectingOut(SocketInfo& socketinfo);
   void handleTCPPlainIn(SocketInfo& socketinfo);
-  void handleTCPPlainOut(SocketInfo& socketinfo);
+  void handleTCPPlainOut(SocketInfo& socketinfo, bool readafter = true);
   void handleTCPSSLNegotiationIn(SocketInfo& socketinfo);
   void handleTCPSSLNegotiationOut(SocketInfo& socketinfo);
   void handleTCPSSLIn(SocketInfo& socketinfo);

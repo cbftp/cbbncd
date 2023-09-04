@@ -3,9 +3,14 @@
 #include <iostream>
 #include <ctime>
 
+#include "listenportmanager.h"
+
 GlobalContext* global = new GlobalContext();
 
 GlobalContext::GlobalContext() : verbose(false) {
+}
+
+GlobalContext::~GlobalContext() {
 }
 
 std::string ctimeLog() {
@@ -21,6 +26,10 @@ void GlobalContext::linkComponents(Core::WorkManager* wm, Core::IOManager* iom, 
   this->tp = tp;
 }
 
+void GlobalContext::linkComponents(const std::shared_ptr<ListenPortManager>& lpm) {
+  this->lpm = lpm;
+}
+
 Core::IOManager* GlobalContext::getIOManager() {
   return iom;
 }
@@ -31,6 +40,10 @@ Core::WorkManager* GlobalContext::getWorkManager() {
 
 Core::TickPoke* GlobalContext::getTickPoke() {
   return tp;
+}
+
+std::shared_ptr<ListenPortManager> GlobalContext::getListenPortManager() const {
+  return lpm;
 }
 
 void GlobalContext::setVerbose(bool verbose) {

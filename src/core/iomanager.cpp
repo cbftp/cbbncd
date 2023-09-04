@@ -871,7 +871,7 @@ void IOManager::handleTCPPlainIn(SocketInfo& socketinfo) {
   }
 }
 
-void IOManager::handleTCPPlainOut(SocketInfo& socketinfo) {
+void IOManager::handleTCPPlainOut(SocketInfo& socketinfo, bool readafter) {
   while (!socketinfo.sendqueue.empty()) {
     DataBlock& block = socketinfo.sendqueue.front();
     int bsent = write(socketinfo.fd, block.data(), block.dataLength());
@@ -900,7 +900,9 @@ void IOManager::handleTCPPlainOut(SocketInfo& socketinfo) {
     closeSocketIntern(socketinfo.id);
     return;
   }
-  setPollRead(socketinfo);
+  if (readafter) {
+    setPollRead(socketinfo);
+  }
   workmanager.dispatchEventSendComplete(socketinfo.receiver, socketinfo.id, socketinfo.prio);
 }
 
@@ -944,6 +946,9 @@ void IOManager::handleTCPSSLNegotiationIn(SocketInfo& socketinfo) {
 }
 
 void IOManager::handleTCPSSLNegotiationOut(SocketInfo& socketinfo) {
+  if (!socketinfo.sendqueue.empty()) {
+    handleTCPPlainOut(socketinfo, false);
+  }
   SSL* ssl = SSL_new(socketinfo.type == SocketType::TCP_SSL_NEG_CONNECT ? SSLManager::getClientSSLCTX()
                                                                         : SSLManager::getServerSSLCTX());
   SSL_set_mode(ssl, SSL_MODE_ACCEPT_MOVING_WRITE_BUFFER);

@@ -4,19 +4,21 @@
 #include "../core/tickpoke.h"
 
 #include "../globalcontext.h"
+#include "../util.h"
 
 #include "bncsession.h"
 
 Ident::Ident(BncSession* bncsession) : bncsession(bncsession), active(false) {
 }
 
-void Ident::activate(const std::string& sourcehost, int sourceport, int targetport) {
+void Ident::activate(const std::string& sessiontag, Core::AddressFamily sourceaddrfam, const std::string& sourcehost, int sourceport, int targetport) {
   this->sourceport = sourceport;
   this->targetport = targetport;
-  sessiontag = sourcehost + ":" + std::to_string(sourceport);
+  this->sessiontag = sessiontag;
   active = true;
-  sockid = global->getIOManager()->registerTCPClientSocket(this, sourcehost, 113);
-  global->log("[" + sessiontag + "] Connecting to client ident server " + sourcehost + ":113");
+  bool resolving;
+  sockid = global->getIOManager()->registerTCPClientSocket(this, sourcehost, 113, resolving, sourceaddrfam);
+  global->log("[" + sessiontag + "] Connecting to client ident server " + util::ipFormat(sourceaddrfam, sourcehost) + ":113");
   global->getTickPoke()->startPoke(this, "Ident", 3000, sockid);
 }
 

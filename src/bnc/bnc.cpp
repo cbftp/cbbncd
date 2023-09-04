@@ -8,8 +8,13 @@
 
 #include "bncsession.h"
 
-Bnc::Bnc(int listenport, const std::string& host, int port, bool ident) : listenport(listenport), host(host), port(port), ident(ident) {
-  global->getIOManager()->registerTCPServerSocket(this, listenport);
+Bnc::Bnc(int listenport, Core::AddressFamily addrfam, const std::string& host, int port, bool ident,
+  bool traffic, int pasvportfirst, int pasvportlast) : listenport(listenport),
+  addrfam(addrfam), host(host), port(port), ident(ident), traffic(traffic),
+  pasvportfirst(pasvportfirst), pasvportlast(pasvportlast)
+{
+  global->getIOManager()->registerTCPServerSocket(this, listenport, Core::AddressFamily::IPV4);
+  global->getIOManager()->registerTCPServerSocket(this, listenport, Core::AddressFamily::IPV6);
 }
 
 void Bnc::FDNew(int sockid, int newsockid) {
@@ -20,7 +25,7 @@ void Bnc::FDNew(int sockid, int newsockid) {
       return;
     }
   }
-  BncSession* session = new BncSession(listenport, host, port, ident);
+  BncSession* session = new BncSession(listenport, addrfam, host, port, ident, traffic);
   session->activate(newsockid);
   sessions.push_back(session);
 }
