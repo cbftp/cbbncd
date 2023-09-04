@@ -271,7 +271,7 @@ int IOManager::registerTCPServerSocket(EventReceiver * er, int port, bool local)
       return -1;
     }
   }
-  retcode = listen(sockfd, 10);
+  retcode = listen(sockfd, 100);
   if (retcode) {
     if (!handleError(er)) {
       return -1;

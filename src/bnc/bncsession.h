@@ -15,7 +15,7 @@ enum State {
 
 class BncSession : private EventReceiver {
 public:
-  BncSession(int, const std::string &, int);
+  BncSession(int, const std::string &, int, bool);
   bool active();
   void activate(int);
   void FDDisconnected(int);

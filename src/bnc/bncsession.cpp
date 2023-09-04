@@ -10,9 +10,9 @@
 #include "bncsessionclient.h"
 #include "ident.h"
 
-BncSession::BncSession(int listenport, const std::string & host, int port) :
+BncSession::BncSession(int listenport, const std::string & host, int port, bool ident) :
   sessionclient(new BncSessionClient(this)),
-  identp(new Ident(this)),
+  identp(ident ? new Ident(this) : NULL),
   state(BNC_DISCONNECTED),
   listenport(listenport),
   host(host),
@@ -29,13 +29,19 @@ bool BncSession::active() {
 void BncSession::activate(int sockid) {
   this->sockid = sockid;
   paused = false;
-  state = BNC_IDENT;
   global->getIOManager()->registerTCPServerClientSocket(this, sockid);
   srcaddr = global->getIOManager()->getSocketAddress(sockid);
   int srcport = global->getIOManager()->getSocketPort(sockid);
   sessiontag = srcaddr + ":" + coreutil::int2Str(srcport);
   global->log("[" + sessiontag + "] New client connection");
-  identp->activate(srcaddr, srcport, listenport);
+  if (identp != NULL) {
+    state = BNC_IDENT;
+    identp->activate(srcaddr, srcport, listenport);
+  }
+  else {
+    state = BNC_ESTABLISHED;
+    sessionclient->activate(sessiontag, host, port, "*@" + srcaddr);
+  }
 }
 
 void BncSession::ident(const std::string & ident) {

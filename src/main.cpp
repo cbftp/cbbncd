@@ -66,18 +66,20 @@ void daemonize() {
   open("/dev/null", O_WRONLY);
 }
 
-void parseData(const std::string & data, int & listenport, std::string & host, int & port) {
-    size_t sep1 = data.find(":");
-    size_t sep2 = data.find(":", sep1 + 1);
+void parseData(const std::string & data, int & listenport, std::string & host, int & port, bool & ident) {
+    size_t sep1 = data.find(";");
+    size_t sep2 = data.find(";", sep1 + 1);
+    size_t portsep = data.find(":", sep1 + 1);
     listenport = str2Int(data.substr(0, sep1));
     port = 21;
-    if (sep2 != std::string::npos) {
-      host = data.substr(sep1 + 1, sep2 - sep1 - 1);
-      port = str2Int(data.substr(sep2 + 1));
+    if (portsep != std::string::npos) {
+      host = data.substr(sep1 + 1, portsep - sep1 - 1);
+      port = str2Int(data.substr(portsep + 1, sep2 - portsep));
     }
     else {
-      host = data.substr(sep1 + 1);
+      host = data.substr(sep1 + 1, sep2 - sep1);
     }
+    ident = data.substr(sep2 + 1) != "n";
 }
 
 bool isAscii(const BinaryData & data) {
@@ -116,7 +118,8 @@ int main(int argc, char ** argv) {
   int listenport;
   std::string host;
   int port;
-  parseData(data, listenport, host, port);
+  bool ident;
+  parseData(data, listenport, host, port, ident);
 
   if (daemon) {
     daemonize();
@@ -130,7 +133,7 @@ int main(int argc, char ** argv) {
   IOManager * iom = new IOManager(wm, tp);
   global->linkComponents(wm, iom, tp);
 
-  Bnc * bnc = new Bnc(listenport, host, port);
+  Bnc * bnc = new Bnc(listenport, host, port, ident);
   wm->init();
   iom->init();
   tp->tickerLoop();

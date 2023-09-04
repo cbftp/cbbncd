@@ -9,7 +9,7 @@ class BncSession;
 
 class Bnc : private EventReceiver {
 public:
-  Bnc(int, const std::string &, int);
+  Bnc(int, const std::string &, int, bool);
   void FDNew(int);
   void FDFail(int, const std::string &);
 private:
@@ -17,4 +17,5 @@ private:
   int listenport;
   std::string host;
   int port;
+  bool ident;
 };

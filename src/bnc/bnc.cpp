@@ -9,7 +9,7 @@
 
 #include "bncsession.h"
 
-Bnc::Bnc(int listenport, const std::string & host, int port) : listenport(listenport), host(host), port(port) {
+Bnc::Bnc(int listenport, const std::string & host, int port, bool ident) : listenport(listenport), host(host), port(port), ident(ident) {
   global->getIOManager()->registerTCPServerSocket(this, listenport);
 }
 
@@ -21,7 +21,7 @@ void Bnc::FDNew(int sockid) {
       return;
     }
   }
-  BncSession * session = new BncSession(listenport, host, port);
+  BncSession * session = new BncSession(listenport, host, port, ident);
   session->activate(sockid);
   sessions.push_back(session);
 }
