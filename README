@@ -3,9 +3,9 @@
 |  _| . | . |   |  _| . |
 |___|___|___|_|_|___|___|
 
-cbbncd-0.14
+cbbncd-0.16
 
-This is a control+traffic FTP bouncer.
+This is an FTP control channel bouncer.
 It works with glftpd and any other ftpd that supports IDNT.
 The connection data is embedded into the executable and is (optionally)
 encrypted with AES-256.
@@ -33,6 +33,8 @@ compilation.
 
 Changelog:
 
+0.16 (2021-03-19):
+  - Switched to a newer encryption key derivation method if available
 0.15 (2021-03-12):
   - Fixed a bug from 0.14 where the port setting was ignored
   - Fixed a bug with TUN interfaces preventing interface matching

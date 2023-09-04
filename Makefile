@@ -2,7 +2,11 @@
 
 SHELL := /bin/bash
 
-AES256_CMD = openssl enc -a -A -aes-256-cbc -md sha256
+HAS_PBKDF2 := $(shell openssl enc -pbkdf2 > /dev/null 2>&1 < /dev/null; echo $$?)
+ifeq ($(HAS_PBKDF2), 0)
+PBKDF2_FLAG := -pbkdf2
+endif
+AES256_CMD = openssl enc -a -A $(PBKDF2_FLAG) -aes-256-cbc -md sha256
 
 LINK = src/core/libcore.a -lssl -lpthread -lcrypto
 

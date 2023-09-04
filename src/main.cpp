@@ -140,8 +140,11 @@ int main(int argc, char** argv) {
     Core::BinaryData decrypteddata;
     Crypto::decrypt(decodeddata, passphrase, decrypteddata);
     if (!isAscii(decrypteddata)) {
-      std::cerr << "Error: Passphrase invalid. Exiting." << std::endl;
-      exit(1);
+      Crypto::decryptOld(decodeddata, passphrase, decrypteddata);
+      if (!isAscii(decrypteddata)) {
+        std::cerr << "Error: Passphrase invalid. Exiting." << std::endl;
+        exit(1);
+      }
     }
     data = std::string(decrypteddata.begin(), decrypteddata.end());
   }
