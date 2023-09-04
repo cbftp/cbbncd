@@ -45,7 +45,7 @@ int ListenPortManager::acquirePort() {
       availableports[pos] = false;
       return firstport + pos;
     }
-    pos = pos + 1 % availableports.size();
+    pos = (pos + 1) % availableports.size();
     if (pos == startpos) {
       return -1;
     }

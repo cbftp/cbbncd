@@ -9,13 +9,18 @@ TrafficBncSessions::~TrafficBncSessions() {
 }
 
 int TrafficBncSessions::activate(Core::AddressFamily pasvaddrfam, Core::AddressFamily portaddrfam, const std::string& host, int port, const std::string& sessiontag) {
+  const std::unique_ptr<TrafficBncSession>* targetsession = nullptr;
   for (const std::unique_ptr<TrafficBncSession>& session : tbncsessions) {
-    if (!session->isActive()) {
-      return session->activate(pasvaddrfam, portaddrfam, host, port, sessiontag);
+    session->dropListener();
+    if (!session->isActive() && !targetsession) {
+      targetsession = &session;
     }
   }
-  tbncsessions.emplace_back(new TrafficBncSession(tbncsessions.size()));
-  return tbncsessions.back()->activate(pasvaddrfam, portaddrfam, host, port, sessiontag);
+  if (!targetsession) {
+    tbncsessions.emplace_back(new TrafficBncSession(tbncsessions.size()));
+    targetsession = &tbncsessions.back();
+  }
+  return (*targetsession)->activate(pasvaddrfam, portaddrfam, host, port, sessiontag);
 }
 
 void TrafficBncSessions::disconnect() {

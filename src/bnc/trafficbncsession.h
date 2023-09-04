@@ -15,6 +15,7 @@ public:
   bool isActive() const;
   int activate(Core::AddressFamily pasvaddrfam, Core::AddressFamily portaddrfam, const std::string& host, int port, const std::string& sessiontag);
   void disconnect();
+  void dropListener();
   void pasvConnected(int newsockid);
   void portConnectFailure();
   void portConnected();
@@ -25,15 +26,19 @@ public:
   void pasvConnSendComplete();
   void portConnSendComplete();
 private:
+  enum class State {
+    ACTIVE,
+    AWAITING_PASV,
+    INACTIVE
+  };
   void transferFinished();
   std::unique_ptr<PasvListener> pasvlistener;
   std::unique_ptr<PasvConn> pasvconn;
   std::unique_ptr<PortConn> portconn;
-  bool active;
+  State state;
   std::string targethost;
   int targetport;
   std::string sessiontag;
-  bool listenportreleased;
   Core::AddressFamily portaddrfam;
   Core::AddressFamily pasvaddrfam;
   int id;

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <list>
 #include <string>
 
 #include "../core/eventreceiver.h"
@@ -20,5 +21,5 @@ private:
   int listenport;
   int sockid;
   std::string sessiontag;
-  int failedlistenport;
+  std::list<int> failedlistenports;
 };

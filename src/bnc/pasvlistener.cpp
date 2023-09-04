@@ -6,7 +6,7 @@
 
 #include "trafficbncsession.h"
 
-PasvListener::PasvListener(TrafficBncSession* tbnc) : tbnc(tbnc), sockid(-1), failedlistenport(-1) {
+PasvListener::PasvListener(TrafficBncSession* tbnc) : tbnc(tbnc), sockid(-1) {
 }
 
 bool PasvListener::listen(Core::AddressFamily addrfam, int port, const std::string& sessiontag) {
@@ -15,7 +15,7 @@ bool PasvListener::listen(Core::AddressFamily addrfam, int port, const std::stri
   this->sessiontag = sessiontag;
   sockid = global->getIOManager()->registerTCPServerSocket(this, listenport, addrfam);
   if (sockid == -1) {
-    failedlistenport = listenport;
+    failedlistenports.push_back(listenport);
   }
   return sockid != -1;
 }
@@ -34,7 +34,13 @@ void PasvListener::FDNew(int sockid, int newsockid) {
 }
 
 void PasvListener::FDFail(int sockid, const std::string& err) {
-  global->log("[" + sessiontag + "] Failed to bind on port " + std::to_string(failedlistenport) + ": " + err);
+  if (!failedlistenports.empty()) {
+    global->log("[" + sessiontag + "] Failed to bind on port " + std::to_string(failedlistenports.front()) + ": " + err);
+    failedlistenports.pop_front();
+  }
+  else {
+    global->log("[" + sessiontag + "] Failed to bind server socket: " + err);
+  }
   sockid = -1;
 }
 

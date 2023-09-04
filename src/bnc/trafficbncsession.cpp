@@ -9,8 +9,8 @@
 #include "portconn.h"
 
 TrafficBncSession::TrafficBncSession(int id) : pasvlistener(new PasvListener(this)),
-  pasvconn(new PasvConn(this)), portconn(new PortConn(this)), active(false),
-  listenportreleased(true), id(id)
+  pasvconn(new PasvConn(this)), portconn(new PortConn(this)), state(State::INACTIVE),
+  id(id)
 {
 }
 
@@ -25,9 +25,8 @@ int TrafficBncSession::activate(Core::AddressFamily pasvaddrfam, Core::AddressFa
   this->sessiontag = sessiontag + " #" + std::to_string(id);
   bool success = false;
   int bindport = -1;
-  if (!listenportreleased) {
+  if (state == State::AWAITING_PASV) {
     global->getListenPortManager()->releasePort(pasvlistener->getListenPort());
-    listenportreleased = true;
   }
   while (!success) {
     bindport = global->getListenPortManager()->acquirePort();
@@ -36,11 +35,13 @@ int TrafficBncSession::activate(Core::AddressFamily pasvaddrfam, Core::AddressFa
       return -1;
     }
     success = pasvlistener->listen(pasvaddrfam, bindport, sessiontag);
+    if (!success) {
+      global->getListenPortManager()->markPortUnavailable(bindport);
+    }
   }
-  global->log("[" + sessiontag + "] Listening for a traffic connection on " +
+  global->log("[" + this->sessiontag + "] Listening for a traffic connection on " +
     (pasvaddrfam == Core::AddressFamily::IPV6 ? "IPv6 " : "") + "port " + std::to_string(bindport));
-  listenportreleased = false;
-  active = true;
+  state = State::AWAITING_PASV;
   return bindport;
 }
 
@@ -48,14 +49,14 @@ void TrafficBncSession::disconnect() {
   pasvconn->disconnect();
   portconn->disconnect();
   pasvlistener->disconnect();
-  if (!listenportreleased) {
+  if (state == State::AWAITING_PASV) {
     global->getListenPortManager()->releasePort(pasvlistener->getListenPort());
-    listenportreleased = true;
   }
-  active = false;
+  state = State::INACTIVE;
 }
 
 void TrafficBncSession::pasvConnected(int newsockid) {
+  state = State::ACTIVE;
   pasvconn->activate(newsockid, sessiontag);
   global->log("[" + sessiontag + "] Traffic connection established from " +
     util::ipFormat(pasvaddrfam, pasvconn->getAddress()) + ":" + std::to_string(pasvconn->getPort()));
@@ -63,12 +64,11 @@ void TrafficBncSession::pasvConnected(int newsockid) {
   global->log("[" + sessiontag + "] Opening traffic connection to " +
     util::ipFormat(portaddrfam, targethost) + ":" + std::to_string(targetport));
   global->getListenPortManager()->releasePort(pasvlistener->getListenPort());
-  listenportreleased = true;
 }
 
 void TrafficBncSession::portConnectFailure() {
   pasvconn->disconnect();
-  active = false;
+  state = State::INACTIVE;
 }
 
 void TrafficBncSession::portConnected() {
@@ -104,7 +104,7 @@ void TrafficBncSession::portConnClosed() {
 
 void TrafficBncSession::transferFinished() {
   global->log("[" + sessiontag + "] Traffic connections closed. Transfer complete, traffic bounce session finished.");
-  active = false;
+  state = State::INACTIVE;
 }
 
 void TrafficBncSession::pasvConnSendComplete() {
@@ -120,5 +120,13 @@ void TrafficBncSession::portConnSendComplete() {
 }
 
 bool TrafficBncSession::isActive() const {
-  return active;
+  return state != State::INACTIVE;
+}
+
+void TrafficBncSession::dropListener() {
+  if (state == State::AWAITING_PASV) {
+    pasvlistener->disconnect();
+    global->getListenPortManager()->releasePort(pasvlistener->getListenPort());
+    state = State::INACTIVE;
+  }
 }

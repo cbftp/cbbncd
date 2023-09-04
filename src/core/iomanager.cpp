@@ -93,6 +93,8 @@ IOManager::IOManager(WorkManager& wm, TickPoke& tp)
   , blocksize(blockpool.blockSize())
   , sockidcounter(0)
   , hasbindinterface(false)
+  , hasbindaddress4(false)
+  , hasbindaddress6(false)
   , sessionkeycounter(0)
 {
   workmanager.addReadyNotify(this);
@@ -330,7 +332,7 @@ void IOManager::handleTCPNameResolution(SocketInfo& socketinfo) {
   return;
 }
 
-int IOManager::registerTCPServerSocket(EventReceiver* er, int port, AddressFamily addrfam, bool local) {
+int IOManager::registerTCPServerSocket(EventReceiver* er, int port, const AddressFamily addrfam, bool local) {
   struct addrinfo sock, *res;
   memset(&sock, 0, sizeof(sock));
   StringResult bindto = getAddressToBind(addrfam, SocketType::TCP_SERVER);
@@ -1403,8 +1405,9 @@ StringResult IOManager::getInterfaceName(const std::string& address) const {
       continue;
     }
     if (host == address) {
+      std::string ifname = ifa->ifa_name;
       freeifaddrs(ifaddr);
-      return ifa->ifa_name;
+      return ifname;
     }
   }
   freeifaddrs(ifaddr);

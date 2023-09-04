@@ -3,7 +3,7 @@
 |  _| . | . |   |  _| . |
 |___|___|___|_|_|___|___|
 
-cbbncd-0.22
+cbbncd-0.23
 
 This is an FTP control channel+traffic bouncer.
 It works with glftpd and any other ftpd that supports IDNT.
@@ -40,6 +40,9 @@ compilation.
 
 Changelog:
 
+0.23 (2022-10-30):
+  - Fixed leaking port listeners
+  - Fixed bugs resulting in bad memory access
 0.22 (2022-10-22):
   - Fixed a problem with stalled transfers when a client connection sends a
     new CPSV/PASV/EPSV before the previous transfer connections were closed

@@ -7,7 +7,7 @@
 
 class ListenPortManager : private Core::EventReceiver {
 public:
-  ListenPortManager(int firstport = 50000, int lastport = 51000);
+  ListenPortManager(int firstport = 50000, int lastport = 50100);
   ~ListenPortManager();
   void setPortRange(int first, int last);
   int acquirePort();
