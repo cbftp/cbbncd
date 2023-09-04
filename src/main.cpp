@@ -39,14 +39,14 @@ void showInput(bool show) {
   tcsetattr(STDIN_FILENO, TCSANOW, &tty);
 }
 
-BinaryData getPassphrase() {
+Core::BinaryData getPassphrase() {
   std::cerr << "Passphrase: ";
   showInput(false);
   std::string passphrase;
   std::getline(std::cin, passphrase);
   std::cerr << std::endl;
   showInput(true);
-  return BinaryData(passphrase.begin(), passphrase.end());
+  return Core::BinaryData(passphrase.begin(), passphrase.end());
 }
 
 void daemonize() {
@@ -66,7 +66,7 @@ void daemonize() {
   open("/dev/null", O_WRONLY);
 }
 
-void parseData(const std::string & data, int & listenport, std::string & host, int & port, bool & ident) {
+void parseData(const std::string& data, int& listenport, std::string& host, int& port, bool& ident) {
     size_t sep1 = data.find(";");
     size_t sep2 = data.find(";", sep1 + 1);
     size_t portsep = data.find(":", sep1 + 1);
@@ -82,7 +82,7 @@ void parseData(const std::string & data, int & listenport, std::string & host, i
     ident = data.substr(sep2 + 1) != "n";
 }
 
-bool isAscii(const BinaryData & data) {
+bool isAscii(const Core::BinaryData& data) {
   for (unsigned int i = 0; i < data.size(); ++i) {
     if (data[i] >= 128) {
       return false;
@@ -91,7 +91,7 @@ bool isAscii(const BinaryData & data) {
   return true;
 }
 
-int main(int argc, char ** argv) {
+int main(int argc, char** argv) {
   bool daemon = false;
   if (argc >= 2) {
     if (!strcmp(argv[1], "-d") || !strcmp(argv[1], "--daemon")) {
@@ -102,12 +102,12 @@ int main(int argc, char ** argv) {
       return 1;
     }
   }
-  std::string data = DATA;
+  std::string data = BNCDATA;
   if (data.find(";") == std::string::npos) {
-    BinaryData passphrase = getPassphrase();
-    BinaryData decodeddata;
-    Crypto::base64Decode(BinaryData(data.begin(), data.end()), decodeddata);
-    BinaryData decrypteddata;
+    Core::BinaryData passphrase = getPassphrase();
+    Core::BinaryData decodeddata;
+    Crypto::base64Decode(Core::BinaryData(data.begin(), data.end()), decodeddata);
+    Core::BinaryData decrypteddata;
     Crypto::decrypt(decodeddata, passphrase, decrypteddata);
     if (!isAscii(decrypteddata)) {
       std::cerr << "Error: Passphrase invalid. Exiting." << std::endl;
@@ -128,13 +128,13 @@ int main(int argc, char ** argv) {
     global->setVerbose(true);
     global->log("Starting in verbose foreground mode. Use -d to start in daemon mode.");
   }
-  WorkManager * wm = new WorkManager();
-  TickPoke * tp = new TickPoke(wm);
-  IOManager * iom = new IOManager(wm, tp);
+  Core::WorkManager* wm = new Core::WorkManager();
+  Core::TickPoke* tp = new Core::TickPoke(*wm);
+  Core::IOManager* iom = new Core::IOManager(*wm, *tp);
   global->linkComponents(wm, iom, tp);
 
-  Bnc * bnc = new Bnc(listenport, host, port, ident);
-  wm->init();
-  iom->init();
+  new Bnc(listenport, host, port, ident);
+  wm->init("cbbncd");
+  iom->init("cbbncd");
   tp->tickerLoop();
 }

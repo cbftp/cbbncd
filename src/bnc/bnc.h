@@ -7,13 +7,13 @@
 
 class BncSession;
 
-class Bnc : private EventReceiver {
+class Bnc : private Core::EventReceiver {
 public:
-  Bnc(int, const std::string &, int, bool);
-  void FDNew(int);
-  void FDFail(int, const std::string &);
+  Bnc(int listenport, const std::string& host, int port, bool ident);
 private:
-  std::list<BncSession *> sessions;
+  void FDNew(int sockid, int newsockid) override;
+  void FDFail(int sockid, const std::string& error) override;
+  std::list<BncSession*> sessions;
   int listenport;
   std::string host;
   int port;

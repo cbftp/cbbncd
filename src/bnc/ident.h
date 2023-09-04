@@ -6,20 +6,20 @@
 
 class BncSession;
 
-class Ident : public EventReceiver {
+class Ident : private Core::EventReceiver {
 public:
-  Ident(BncSession *);
-  void activate(const std::string &, int, int);
+  Ident(BncSession* bncsession);
+  void activate(const std::string& sourcehost, int sourceport, int targetport);
   void close();
-  void FDConnected(int);
-  void FDData(int, char *, unsigned int);
-  void FDDisconnected(int);
-  void FDFail(int, const std::string &);
-  void tick(int);
 private:
+  void FDConnected(int sockid) override;
+  void FDData(int sockid, char* buf, unsigned int buflen) override;
+  void FDDisconnected(int sockid) override;
+  void FDFail(int sockid, const std::string& err) override;
+  void tick(int);
   void deactivate();
   void noIdent();
-  BncSession * bncsession;
+  BncSession* bncsession;
   bool active;
   int sockid;
   int sourceport;

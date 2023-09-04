@@ -3,7 +3,7 @@
 |  _| . | . |   |  _| . |
 |___|___|___|_|_|___|___|
 
-cbbncd-0.11
+cbbncd-0.12
 
 This is a simple FTP bouncer.
 It works with glftpd and any other ftpd that supports IDNT.
@@ -23,6 +23,9 @@ removed.
 
 Changelog:
 
+0.12 (2019-12-04):
+  - Fixed missing reverse DNS field in IDNT
+  - Updated core lib
 0.11 (2018-12-09):
   - Fixed a bug where ident lookup couldn't be disabled
 0.10 (2018-12-01):

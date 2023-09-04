@@ -13,21 +13,21 @@ enum State {
   BNC_ESTABLISHED
 };
 
-class BncSession : private EventReceiver {
+class BncSession : private Core::EventReceiver {
 public:
-  BncSession(int, const std::string &, int, bool);
+  BncSession(int listenport, const std::string& host, int port, bool ident);
   bool active();
-  void activate(int);
-  void FDDisconnected(int);
-  void FDData(int, char *, unsigned int);
-  void FDSendComplete(int);
+  void activate(int sockid);
   void targetDisconnected();
-  bool targetData(char *, unsigned int);
+  bool targetData(char* data, unsigned int datalen);
   void targetSendComplete();
-  void ident(const std::string &);
+  void ident(const std::string& ident);
 private:
-  BncSessionClient * sessionclient;
-  Ident * identp;
+  void FDDisconnected(int sockid) override;
+  void FDData(int sockid, char* data, unsigned int datalen) override;
+  void FDSendComplete(int sockid) override;
+  BncSessionClient* sessionclient;
+  Ident* identp;
   int state;
   int listenport;
   std::string host;

@@ -2,32 +2,31 @@
 
 #include "../core/iomanager.h"
 #include "../core/tickpoke.h"
-#include "../core/util.h"
 
 #include "../globalcontext.h"
 
 #include "bncsession.h"
 
-Ident::Ident(BncSession * bncsession) : bncsession(bncsession), active(false) {
+Ident::Ident(BncSession* bncsession) : bncsession(bncsession), active(false) {
 }
 
-void Ident::activate(const std::string & sourcehost, int sourceport, int targetport) {
+void Ident::activate(const std::string& sourcehost, int sourceport, int targetport) {
   this->sourceport = sourceport;
   this->targetport = targetport;
-  sessiontag = sourcehost + ":" + coreutil::int2Str(sourceport);
+  sessiontag = sourcehost + ":" + std::to_string(sourceport);
   active = true;
   sockid = global->getIOManager()->registerTCPClientSocket(this, sourcehost, 113);
   global->log("[" + sessiontag + "] Connecting to client ident server " + sourcehost + ":113");
   global->getTickPoke()->startPoke(this, "Ident", 3000, sockid);
 }
 
-void Ident::FDConnected(int) {
-  std::string identrequest = coreutil::int2Str(sourceport) + ", " + coreutil::int2Str(targetport);
+void Ident::FDConnected(int sockid) {
+  std::string identrequest = std::to_string(sourceport) + ", " + std::to_string(targetport);
   global->log("[" + sessiontag + "] Ident connection established. Sending ident request: " + identrequest);
   global->getIOManager()->sendData(sockid, identrequest + "\r\n");
 }
 
-void Ident::FDData(int, char * buf, unsigned int buflen) {
+void Ident::FDData(int sockid, char* buf, unsigned int buflen) {
   std::string identstr(buf, buflen);
   while (identstr.length() > 1 && (identstr[identstr.length() - 1] == '\n' || identstr[identstr.length() - 1] == '\r')) {
     identstr = identstr.substr(0, identstr.length() - 1);
@@ -49,7 +48,7 @@ void Ident::FDData(int, char * buf, unsigned int buflen) {
   deactivate();
 }
 
-void Ident::FDDisconnected(int) {
+void Ident::FDDisconnected(int sockid) {
   if (active) {
     global->log("[" + sessiontag + "] Client ident server closed the connection unexpectedly.");
     noIdent();
@@ -57,7 +56,7 @@ void Ident::FDDisconnected(int) {
   }
 }
 
-void Ident::FDFail(int sockid, const std::string & err) {
+void Ident::FDFail(int sockid, const std::string& err) {
   if (active) {
     global->log("[" + sessiontag + "] Client ident server connection failed: " + err);
     noIdent();

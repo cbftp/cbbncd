@@ -1,3 +1,5 @@
+-include Makefile.inc
+
 SHELL := /bin/bash
 
 AES256_CMD = openssl enc -a -A -aes-256-cbc -md sha256
@@ -23,7 +25,7 @@ application: core
 	@if [ -z "$(ENCRYPT)" ] || [ -z "$(ENCDATA)" ]; then echo "$(DATA)" > .last; fi
 	@if [ -n "$(ENCRYPT)" ] && [ -z "$(ENCDATA)" ]; then echo -e "WARNING: Continuing without encryption."; fi
 	$(eval DATA := $(shell if [ -n "$(ENCDATA)" ]; then echo $(ENCDATA); else echo "$(DATA)"; fi))
-	g++ -g -o cbbncd -DDATA="\"$(DATA)\"" $(wildcard src/*.cpp src/bnc/*.cpp) $(LINK)
+	g++ $(ALLFLAGS) -o cbbncd -DBNCDATA="\"$(DATA)\"" $(wildcard src/*.cpp src/bnc/*.cpp) $(LINK)
 
 core:
 	@+$(MAKE) -C src/core

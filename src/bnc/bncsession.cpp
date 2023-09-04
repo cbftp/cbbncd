@@ -3,7 +3,6 @@
 #include <sstream>
 
 #include "../core/iomanager.h"
-#include "../core/util.h"
 
 #include "../globalcontext.h"
 
@@ -12,7 +11,7 @@
 
 BncSession::BncSession(int listenport, const std::string & host, int port, bool ident) :
   sessionclient(new BncSessionClient(this)),
-  identp(ident ? new Ident(this) : NULL),
+  identp(ident ? new Ident(this) : nullptr),
   state(BNC_DISCONNECTED),
   listenport(listenport),
   host(host),
@@ -32,26 +31,26 @@ void BncSession::activate(int sockid) {
   global->getIOManager()->registerTCPServerClientSocket(this, sockid);
   srcaddr = global->getIOManager()->getSocketAddress(sockid);
   int srcport = global->getIOManager()->getSocketPort(sockid);
-  sessiontag = srcaddr + ":" + coreutil::int2Str(srcport);
+  sessiontag = srcaddr + ":" + std::to_string(srcport);
   global->log("[" + sessiontag + "] New client connection");
-  if (identp != NULL) {
+  if (identp != nullptr) {
     state = BNC_IDENT;
     identp->activate(srcaddr, srcport, listenport);
   }
   else {
     state = BNC_ESTABLISHED;
-    sessionclient->activate(sessiontag, host, port, "*@" + srcaddr);
+    sessionclient->activate(sessiontag, host, port, "*@" + srcaddr + ":" + srcaddr);
   }
 }
 
-void BncSession::ident(const std::string & ident) {
+void BncSession::ident(const std::string& ident) {
   if (state == BNC_IDENT) {
     state = BNC_ESTABLISHED;
-    sessionclient->activate(sessiontag, host, port, ident + '@' + srcaddr);
+    sessionclient->activate(sessiontag, host, port, ident + '@' + srcaddr + ":" + srcaddr);
   }
 }
 
-void BncSession::FDDisconnected(int) {
+void BncSession::FDDisconnected(int sockid) {
   if (state == BNC_IDENT) {
     identp->close();
     global->log("[" + sessiontag + "] Client closed the connection. Session finished.");
@@ -63,7 +62,7 @@ void BncSession::FDDisconnected(int) {
   state = BNC_DISCONNECTED;
 }
 
-void BncSession::FDData(int, char * data, unsigned int datalen) {
+void BncSession::FDData(int sockid, char* data, unsigned int datalen) {
   if (state == BNC_ESTABLISHED) {
     if (!sessionclient->sendData(data, datalen) && !paused) {
       global->getIOManager()->pause(sockid);
@@ -79,7 +78,7 @@ void BncSession::targetSendComplete() {
   }
 }
 
-void BncSession::FDSendComplete(int) {
+void BncSession::FDSendComplete(int sockid) {
   sessionclient->sendComplete();
 }
 
@@ -88,6 +87,6 @@ void BncSession::targetDisconnected() {
   state = BNC_DISCONNECTED;
 }
 
-bool BncSession::targetData(char * data, unsigned int datalen) {
+bool BncSession::targetData(char* data, unsigned int datalen) {
   return global->getIOManager()->sendData(sockid, data, datalen);
 }

@@ -11,11 +11,11 @@
 
 namespace {
 
-const EVP_CIPHER * cipher() {
+const EVP_CIPHER* cipher() {
   return EVP_aes_256_cbc();
 }
 
-const EVP_MD * digest() {
+const EVP_MD* digest() {
   return EVP_sha256();
 }
 
@@ -25,13 +25,13 @@ int blockSize() {
 
 }
 
-void Crypto::encrypt(const BinaryData & indata, const BinaryData & pass, BinaryData & outdata) {
-  EVP_CIPHER_CTX * ctx = EVP_CIPHER_CTX_new();
-  const EVP_CIPHER * cipherp = cipher();
+void Crypto::encrypt(const Core::BinaryData& indata, const Core::BinaryData& pass, Core::BinaryData& outdata) {
+  EVP_CIPHER_CTX* ctx = EVP_CIPHER_CTX_new();
+  const EVP_CIPHER* cipherp = cipher();
   int ivlen = EVP_CIPHER_iv_length(cipherp);
   int keylen = EVP_CIPHER_key_length(cipherp);
-  unsigned char * key = (unsigned char *) malloc(keylen);
-  unsigned char * iv = (unsigned char *) malloc(ivlen);
+  unsigned char* key = (unsigned char*) malloc(keylen);
+  unsigned char* iv = (unsigned char*) malloc(ivlen);
   outdata.resize(SALT_STRING_LENGTH + indata.size() + blockSize());
   memcpy(&outdata[0], "Salted__", SALT_STRING_LENGTH - SALT_LENGTH);
   srand(time(NULL));
@@ -51,13 +51,13 @@ void Crypto::encrypt(const BinaryData & indata, const BinaryData & pass, BinaryD
   free(iv);
 }
 
-void Crypto::decrypt(const BinaryData & indata, const BinaryData & pass, BinaryData & outdata) {
-  EVP_CIPHER_CTX * ctx = EVP_CIPHER_CTX_new();
-  const EVP_CIPHER * cipherp = cipher();
+void Crypto::decrypt(const Core::BinaryData& indata, const Core::BinaryData& pass, Core::BinaryData& outdata) {
+  EVP_CIPHER_CTX* ctx = EVP_CIPHER_CTX_new();
+  const EVP_CIPHER* cipherp = cipher();
   int ivlen = EVP_CIPHER_iv_length(cipherp);
   int keylen = EVP_CIPHER_key_length(cipherp);
-  unsigned char * key = (unsigned char *) malloc(keylen);
-  unsigned char * iv = (unsigned char *) malloc(ivlen);
+  unsigned char* key = (unsigned char*) malloc(keylen);
+  unsigned char* iv = (unsigned char*) malloc(ivlen);
   EVP_BytesToKey(cipherp, digest(), &indata[SALT_STRING_LENGTH - SALT_LENGTH], &pass[0],
                  pass.size(), 1, key, iv);
   outdata.resize(indata.size() + blockSize());
@@ -73,21 +73,7 @@ void Crypto::decrypt(const BinaryData & indata, const BinaryData & pass, BinaryD
   free(iv);
 }
 
-void Crypto::decryptOld(const BinaryData & indata, const BinaryData & key, BinaryData & outdata) {
-  EVP_CIPHER_CTX * ctx = EVP_CIPHER_CTX_new();
-  const EVP_CIPHER * cipherp = cipher();
-  int ivlen = EVP_CIPHER_iv_length(cipherp);
-  outdata.resize(indata.size() + blockSize());
-  int writelen;
-  int finalwritelen;
-  EVP_DecryptInit_ex(ctx, cipherp, NULL, &key[0], &indata[0]);
-  EVP_DecryptUpdate(ctx, &outdata[0], &writelen, &indata[ivlen], indata.size() - ivlen);
-  EVP_DecryptFinal_ex(ctx, &outdata[writelen], &finalwritelen);
-  outdata.resize(writelen + finalwritelen);
-  EVP_CIPHER_CTX_free(ctx);
-}
-
-void Crypto::sha256(const BinaryData & indata, BinaryData & outdata) {
+void Crypto::sha256(const Core::BinaryData& indata, Core::BinaryData& outdata) {
   outdata.resize(SHA256_DIGEST_LENGTH);
   SHA256_CTX ctx;
   SHA256_Init(&ctx);
@@ -95,13 +81,13 @@ void Crypto::sha256(const BinaryData & indata, BinaryData & outdata) {
   SHA256_Final(&outdata[0], &ctx);
 }
 
-void Crypto::base64Encode(const BinaryData & indata, BinaryData & outdata) {
+void Crypto::base64Encode(const Core::BinaryData& indata, Core::BinaryData& outdata) {
   outdata.resize((indata.size() / 3 + ((indata.size() % 3) ? 1 : 0)) * 4 + 1);
   int bytes = EVP_EncodeBlock(&outdata[0], &indata[0], indata.size());
   outdata.resize(bytes);
 }
 
-void Crypto::base64Decode(const BinaryData & indata, BinaryData & outdata) {
+void Crypto::base64Decode(const Core::BinaryData& indata, Core::BinaryData& outdata) {
   int pos = indata.size();
   int padding = 0;
   while (--pos >= 0 && indata[pos] == '=') {

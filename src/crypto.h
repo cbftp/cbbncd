@@ -4,10 +4,9 @@
 
 class Crypto {
 public:
-  static void encrypt(const BinaryData &, const BinaryData &, BinaryData &);
-  static void decrypt(const BinaryData &, const BinaryData &, BinaryData &);
-  static void decryptOld(const BinaryData &, const BinaryData &, BinaryData &);
-  static void sha256(const BinaryData &, BinaryData &);
-  static void base64Encode(const BinaryData &, BinaryData &);
-  static void base64Decode(const BinaryData &, BinaryData &);
+  static void encrypt(const Core::BinaryData& indata, const Core::BinaryData& pass, Core::BinaryData& outdata);
+  static void decrypt(const Core::BinaryData& indata, const Core::BinaryData& pass, Core::BinaryData& outdata);
+  static void sha256(const Core::BinaryData& indata, Core::BinaryData& outdata);
+  static void base64Encode(const Core::BinaryData& indata, Core::BinaryData& outdata);
+  static void base64Decode(const Core::BinaryData& indata, Core::BinaryData& outdata);
 };
