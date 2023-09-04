@@ -35,7 +35,7 @@ enum class OriginCatch {
 };
 
 class BncSession;
-class TrafficBncSession;
+class TrafficBncSessions;
 
 class BncSessionClient : private Core::EventReceiver {
 public:
@@ -70,7 +70,7 @@ private:
   TLSState tlsstate;
   std::string parentcipher;
   std::string cipher;
-  std::unique_ptr<TrafficBncSession> tbnc;
+  std::unique_ptr<TrafficBncSessions> tbncsessions;
   std::string ifaddr4;
   std::string ifaddr6;
   bool traffic;

@@ -10,8 +10,9 @@ class PortConn;
 
 class TrafficBncSession {
 public:
-  TrafficBncSession();
+  TrafficBncSession(int id);
   ~TrafficBncSession();
+  bool isActive() const;
   int activate(Core::AddressFamily pasvaddrfam, Core::AddressFamily portaddrfam, const std::string& host, int port, const std::string& sessiontag);
   void disconnect();
   void pasvConnected(int newsockid);
@@ -28,10 +29,12 @@ private:
   std::unique_ptr<PasvListener> pasvlistener;
   std::unique_ptr<PasvConn> pasvconn;
   std::unique_ptr<PortConn> portconn;
+  bool active;
   std::string targethost;
   int targetport;
   std::string sessiontag;
   bool listenportreleased;
   Core::AddressFamily portaddrfam;
   Core::AddressFamily pasvaddrfam;
+  int id;
 };

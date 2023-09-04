@@ -8,8 +8,9 @@
 #include "pasvconn.h"
 #include "portconn.h"
 
-TrafficBncSession::TrafficBncSession() : pasvlistener(new PasvListener(this)),
-  pasvconn(new PasvConn(this)), portconn(new PortConn(this)), listenportreleased(true)
+TrafficBncSession::TrafficBncSession(int id) : pasvlistener(new PasvListener(this)),
+  pasvconn(new PasvConn(this)), portconn(new PortConn(this)), active(false),
+  listenportreleased(true), id(id)
 {
 }
 
@@ -21,7 +22,7 @@ int TrafficBncSession::activate(Core::AddressFamily pasvaddrfam, Core::AddressFa
   this->pasvaddrfam = pasvaddrfam;
   this->targethost = host;
   this->targetport = port;
-  this->sessiontag = sessiontag;
+  this->sessiontag = sessiontag + " #" + std::to_string(id);
   bool success = false;
   int bindport = -1;
   if (!listenportreleased) {
@@ -39,6 +40,7 @@ int TrafficBncSession::activate(Core::AddressFamily pasvaddrfam, Core::AddressFa
   global->log("[" + sessiontag + "] Listening for a traffic connection on " +
     (pasvaddrfam == Core::AddressFamily::IPV6 ? "IPv6 " : "") + "port " + std::to_string(bindport));
   listenportreleased = false;
+  active = true;
   return bindport;
 }
 
@@ -50,6 +52,7 @@ void TrafficBncSession::disconnect() {
     global->getListenPortManager()->releasePort(pasvlistener->getListenPort());
     listenportreleased = true;
   }
+  active = false;
 }
 
 void TrafficBncSession::pasvConnected(int newsockid) {
@@ -65,6 +68,7 @@ void TrafficBncSession::pasvConnected(int newsockid) {
 
 void TrafficBncSession::portConnectFailure() {
   pasvconn->disconnect();
+  active = false;
 }
 
 void TrafficBncSession::portConnected() {
@@ -100,6 +104,7 @@ void TrafficBncSession::portConnClosed() {
 
 void TrafficBncSession::transferFinished() {
   global->log("[" + sessiontag + "] Traffic connections closed. Transfer complete, traffic bounce session finished.");
+  active = false;
 }
 
 void TrafficBncSession::pasvConnSendComplete() {
@@ -112,4 +117,8 @@ void TrafficBncSession::portConnSendComplete() {
   if (pasvconn->isPaused()) {
     pasvconn->resume();
   }
+}
+
+bool TrafficBncSession::isActive() const {
+  return active;
 }

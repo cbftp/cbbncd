@@ -7,7 +7,7 @@
 #include "../globalcontext.h"
 
 #include "bncsession.h"
-#include "trafficbncsession.h"
+#include "trafficbncsessions.h"
 #include "../util.h"
 
 #include "../ftp/pasvstring.h"
@@ -23,7 +23,7 @@ BncSessionClient::BncSessionClient(BncSession * parentsession, bool traffic, boo
   tlsstate(TLSState::NONE), traffic(traffic), noidnt(noidnt)
 {
   if (traffic) {
-    tbnc = std::unique_ptr<TrafficBncSession>(new TrafficBncSession());
+    tbncsessions = std::unique_ptr<TrafficBncSessions>(new TrafficBncSessions());
   }
 }
 
@@ -63,8 +63,8 @@ void BncSessionClient::ident(const std::string& ident) {
 void BncSessionClient::disconnect() {
   connected = false;
   global->getIOManager()->closeSocket(sockid);
-  if (tbnc) {
-    tbnc->disconnect();
+  if (tbncsessions) {
+    tbncsessions->disconnect();
   }
 }
 
@@ -94,8 +94,8 @@ void BncSessionClient::FDDisconnected(int sockid, Core::DisconnectType reason, c
   global->log("[" + sessiontag + "] Server closed the connection. Disconnecting client. Session finished.");
   connected = false;
   session->targetDisconnected();
-  if (tbnc) {
-    tbnc->disconnect();
+  if (tbncsessions) {
+    tbncsessions->disconnect();
   }
 }
 
@@ -149,7 +149,7 @@ void BncSessionClient::FDData(int sockid, char* data, unsigned int datalen) {
           int port;
           if (fromPASVString(pasvstring, addr, port)) {
             global->log("[" + sessiontag + "] Caught PASV response, preparing traffic bounce session");
-            int boundport = tbnc->activate(Core::AddressFamily::IPV4, Core::AddressFamily::IPV4, addr, port, sessiontag);
+            int boundport = tbncsessions->activate(Core::AddressFamily::IPV4, Core::AddressFamily::IPV4, addr, port, sessiontag);
             if (boundport != -1) {
               modifiedresponse = response.substr(0, start) + toPASVString(ifaddr4, boundport) + response.substr(end);
               global->log("[" + sessiontag + "] Rewriting PASV string " + addr + ":" + std::to_string(port) +
@@ -189,7 +189,7 @@ void BncSessionClient::FDData(int sockid, char* data, unsigned int datalen) {
             }
             std::string ifaddr = originaddrfam == Core::AddressFamily::IPV4 ? ifaddr4 : ifaddr6;
             global->log("[" + sessiontag + "] Caught EPSV response, preparing traffic bounce session");
-            int boundport = tbnc->activate(originaddrfam, addrfam, useaddr, port, sessiontag);
+            int boundport = tbncsessions->activate(originaddrfam, addrfam, useaddr, port, sessiontag);
             if (boundport != -1) {
               if (origincatch == OriginCatch::PASV) {
                 modifiedresponse = "227 Entering Passive Mode (" + toPASVString(ifaddr, boundport) + ")\r\n";
@@ -313,7 +313,7 @@ bool BncSessionClient::sendData(const char* data, unsigned int datalen) {
     int port;
     if (fromPASVString(commandwords[1], addr, port)) {
       global->log("[" + sessiontag + "] Caught PORT command, preparing traffic bounce session");
-      int boundport = tbnc->activate(siteaddrfam, Core::AddressFamily::IPV4, addr, port, sessiontag);
+      int boundport = tbncsessions->activate(siteaddrfam, Core::AddressFamily::IPV4, addr, port, sessiontag);
       if (boundport != -1) {
         if (siteaddrfam == Core::AddressFamily::IPV4) {
           modifiedcommand = commandwords[0] + " " + toPASVString(siteifaddr, boundport);
@@ -347,7 +347,7 @@ bool BncSessionClient::sendData(const char* data, unsigned int datalen) {
         useaddr = clientaddr;
       }
       global->log("[" + sessiontag + "] Caught EPRT command, preparing traffic bounce session");
-      int boundport = tbnc->activate(siteaddrfam, addrfam, useaddr, port, sessiontag);
+      int boundport = tbncsessions->activate(siteaddrfam, addrfam, useaddr, port, sessiontag);
       if (boundport != -1) {
 
         modifiedcommand = commandwords[0] + " " + toExtendedPASVString(siteaddrfam, siteifaddr, boundport);
