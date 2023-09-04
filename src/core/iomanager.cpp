@@ -1255,8 +1255,8 @@ std::string IOManager::getBindInterface() const {
   return bindinterface;
 }
 
-std::string IOManager::getBindAddress() const {
-  return bindaddress;
+std::string IOManager::getBindAddress(AddressFamily addrfam) const {
+  return addrfam == AddressFamily::IPV4 ? bindaddress4 : bindaddress6;
 }
 
 void IOManager::setBindInterface(const std::string& interface) {
@@ -1278,18 +1278,34 @@ void IOManager::setBindInterface(const std::string& interface) {
   }
 }
 
-void IOManager::setBindAddress(const std::string& address) {
+void IOManager::setBindAddress(AddressFamily addrfam, const std::string& address) {
+  bool *hasbindaddress = nullptr;
+  std::string *bindaddress = nullptr;
+  std::string addrtype;
+  if (addrfam == AddressFamily::IPV4) {
+    hasbindaddress = &hasbindaddress4;
+    bindaddress = &bindaddress4;
+    addrtype = "IPv4";
+  }
+  else if (addrfam == AddressFamily::IPV6) {
+    hasbindaddress = &hasbindaddress6;
+    bindaddress = &bindaddress6;
+    addrtype = "IPv6";
+  }
+  else {
+    return;
+  }
   if (address.empty()) {
-    if (hasbindaddress) {
-      hasbindaddress = false;
-      getLogger()->log("IOManager", "Bind IP address removed", LogLevel::INFO);
+    if (*hasbindaddress) {
+      *hasbindaddress = false;
+      getLogger()->log("IOManager", "Bind " + addrtype + " address removed", LogLevel::INFO);
     }
     return;
   }
-  if (!hasbindaddress && bindaddress != address) {
-    bindaddress = address;
-    hasbindaddress = true;
-    getLogger()->log("IOManager", "Bind IP address set to: " + address, LogLevel::INFO);
+  if (!*hasbindaddress && *bindaddress != address) {
+    *bindaddress = address;
+    *hasbindaddress = true;
+    getLogger()->log("IOManager", "Bind " + addrtype + " address set to: " + address, LogLevel::INFO);
   }
 }
 
@@ -1297,8 +1313,8 @@ bool IOManager::hasBindInterface() const {
   return hasbindinterface;
 }
 
-bool IOManager::hasBindAddress() const {
-  return hasbindaddress;
+bool IOManager::hasBindAddress(AddressFamily addrfam) const {
+  return addrfam == AddressFamily::IPV4 ? hasbindaddress4 : hasbindaddress6;
 }
 
 StringResult IOManager::getInterfaceAddress(const std::string& interface) const {
@@ -1390,8 +1406,8 @@ StringResult IOManager::getInterfaceName(const std::string& address) const {
 
 StringResult IOManager::getAddressToBind(const AddressFamily addrfam, const SocketType socktype) {
   std::string bindto;
-  if (hasBindAddress()) {
-    bindto = bindaddress;
+  if (hasBindAddress(addrfam)) {
+    bindto = getBindAddress(addrfam);
   }
   else if (hasBindInterface()) {
     struct addrinfo request;

@@ -57,6 +57,32 @@ Address parseAddress(std::string address) {
       address = address.substr(3);
     }
   }
+  int colons = 0;
+  if (addr.addrfam == Core::AddressFamily::IPV4_IPV6) {
+    bool canbeipv4 = true;
+    for (size_t i = 0; i < address.length(); ++i) {
+      if (i == 0 && address[i] == '0' && address.length() >= 2 && address[i+1] == 'x') {
+        ++i;
+        continue;
+      }
+      if (address[i] == ':') {
+        ++colons;
+        if (colons >= 2) {
+          canbeipv4 = false;
+        }
+      }
+      if (canbeipv4 && !((address[i] >= '0' && address[i] <= '9') || address[i] == '.' || address[i] == ':')) {
+        canbeipv4 = false;
+      }
+    }
+    if (colons >= 2) {
+      addr.addrfam = Core::AddressFamily::IPV6;
+    }
+    else if (canbeipv4) {
+      addr.addrfam = Core::AddressFamily::IPV4;
+    }
+  }
+
   size_t portpos = std::string::npos;
   if (!address.empty() && address[0] == '[') {
     size_t bracketendpos = address.find("]");
@@ -67,7 +93,9 @@ Address parseAddress(std::string address) {
     }
   }
   if (!addr.brackets) {
-    portpos = address.find(":");
+    if (addr.addrfam != Core::AddressFamily::IPV6) {
+      portpos = address.find(":");
+    }
     if (portpos != std::string::npos) {
       addr.host = address.substr(0, portpos);
     }
@@ -86,4 +114,16 @@ Address parseAddress(std::string address) {
     addr.brackets = false;
   }
   return addr;
+}
+
+std::list<Address> parseAddresses(std::string addrstr) {
+  std::list<Address> addresses;
+  size_t pos;
+  while ((pos = addrstr.find(";")) != std::string::npos) addrstr[pos] = ' ';
+  while ((pos = addrstr.find(",")) != std::string::npos) addrstr[pos] = ' ';
+  std::list<std::string> addrlist = util::trim(util::split(addrstr));
+  for (const std::string& address : addrlist) {
+    addresses.push_back(parseAddress(address));
+  }
+  return addresses;
 }

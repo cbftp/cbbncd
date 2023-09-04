@@ -25,10 +25,10 @@ application: core
 	$(eval USEIDENT := $(shell if [ -z "$(IDENT)" ] && [ -z "$(DATA)" ]; then echo $$(read -p "Ident lookup [$(shell if [ $(LASTIDENT) == "false" ]; then echo "n"; else echo "y"; fi)]: "; if [ -n "$$REPLY" ]; then if [ "$$REPLY" != "n" ]; then echo "true"; else echo "false"; fi; else echo "$(LASTIDENT)"; fi); else echo $(IDENT); fi))
 	$(eval LASTBIND := $(shell cat .last 2>/dev/null|grep 'bind='|cut -d '=' -f 2))
 	$(eval LASTBIND := $(shell if [ -z "$(LASTBIND)" ] || [ "$(LASTBIND)" != "true" ]; then echo "false"; else echo "true"; fi))
-	$(eval USEBIND := $(shell if [ -z "$(BIND)" ] && [ -z "$(DATA)" ]; then echo $$(read -p "Bind to specific IP or interface [$(shell if [ $(LASTBIND) == "false" ]; then echo "n"; else echo "y"; fi)]: "; if [ -n "$$REPLY" ]; then if [ "$$REPLY" != "n" ]; then echo "true"; else echo "false"; fi; else echo "$(LASTBIND)"; fi); else echo $(BIND); fi))
+	$(eval USEBIND := $(shell if [ -z "$(BIND)" ] && [ -z "$(DATA)" ]; then echo $$(read -p "Bind to specific IPs or interface [$(shell if [ $(LASTBIND) == "false" ]; then echo "n"; else echo "y"; fi)]: "; if [ -n "$$REPLY" ]; then if [ "$$REPLY" != "n" ]; then echo "true"; else echo "false"; fi; else echo "$(LASTBIND)"; fi); else echo $(BIND); fi))
 	$(eval LASTIPIF := $(shell cat .last 2>/dev/null|grep 'ipif='|cut -d '=' -f 2))
 	$(eval LASTIPIF := $(shell if [ -n "$(LASTIPIF)" ]; then echo $(LASTIPIF); else echo "0.0.0.0"; fi))
-	$(eval USEIPIF := $(shell if [ "$(USEBIND)" == "true" ]; then if [ -z "$(IPIF)" ] && [ -z "$(DATA)" ]; then echo $$(read -p "IP or network interface [$(LASTIPIF)]: "; if [ -n "$$REPLY" ]; then echo $$REPLY; else echo $(LASTIPIF); fi); else echo $(IPIF); fi; else echo $(LASTIPIF); fi))
+	$(eval USEIPIF := $(shell if [ "$(USEBIND)" == "true" ]; then if [ -z "$(IPIF)" ] && [ -z "$(DATA)" ]; then echo $$(read -p "IPs or network interface [$(LASTIPIF)]: "; if [ -n "$$REPLY" ]; then echo $$REPLY; else echo $(LASTIPIF); fi); else echo $(IPIF); fi; else echo $(LASTIPIF); fi))
 	$(eval LASTTRAFFIC := $(shell cat .last 2>/dev/null|grep 'traffic='|cut -d '=' -f 2))
 	$(eval LASTTRAFFIC := $(shell if [ -z "$(LASTTRAFFIC)" ] || [ "$(LASTTRAFFIC)" != "true" ]; then echo "false"; else echo "true"; fi))
 	$(eval USETRAFFIC := $(shell if [ -z "$(TRAFFIC)" ] && [ -z "$(DATA)" ]; then echo $$(read -p "Bounce traffic [$(shell if [ $(LASTTRAFFIC) == "false" ]; then echo "n"; else echo "y"; fi)]: "; if [ -n "$$REPLY" ]; then if [ "$$REPLY" != "n" ]; then echo "true"; else echo "false"; fi; else echo "$(LASTTRAFFIC)"; fi); else echo $(TRAFFIC); fi))
@@ -59,7 +59,7 @@ application: core
 	@if [ -z "$(DATA)" ] && ( [ -z "$(ENCRYPT)" ] || [ -z "$(ENCDATA)" ] ); then echo "$(LASTDATA)" | sed s/\;/\\n/g > .last; fi
 	@if [ -n "$(ENCRYPT)" ] && [ -z "$(ENCDATA)" ]; then echo -e "WARNING: Proceeding without encryption."; fi
 	$(eval DATA := $(shell if [ -z "$(DATA)" ]; then echo $$(if [ -n "$(ENCDATA)" ]; then echo $(ENCDATA); else echo "$(AGGDATA)"; fi); fi))
-	g++ $(ALLFLAGS) -g -o cbbncd -DBNCDATA="\"$(DATA)\"" $(wildcard src/*.cpp src/bnc/*.cpp src/ftp/*.cpp) $(LINK)
+	g++ $(ALLFLAGS) -o cbbncd -DBNCDATA="\"$(DATA)\"" $(wildcard src/*.cpp src/bnc/*.cpp src/ftp/*.cpp) $(LINK)
 
 core:
 	@+$(MAKE) -C src/core

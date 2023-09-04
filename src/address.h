@@ -1,5 +1,6 @@
 #pragma once
 
+#include <list>
 #include <string>
 
 #include "core/types.h"
@@ -16,3 +17,4 @@ struct Address {
 };
 
 Address parseAddress(std::string address);
+std::list<Address> parseAddresses(std::string addrstr);

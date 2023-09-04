@@ -178,7 +178,10 @@ int main(int argc, char** argv) {
       iom->setBindInterface(cfg.ipif);
     }
     else {
-      iom->setBindAddress(cfg.ipif);
+      std::list<Address> addrs = parseAddresses(cfg.ipif);
+      for (const Address& addr : addrs) {
+        iom->setBindAddress(addr.addrfam, addr.host);
+      }
     }
   }
   global->linkComponents(wm, iom, tp);
