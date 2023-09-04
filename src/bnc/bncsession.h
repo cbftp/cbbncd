@@ -1,6 +1,8 @@
 #pragma once
 
+#include <list>
 #include <string>
+#include <vector>
 
 #include "../core/eventreceiver.h"
 
@@ -23,9 +25,10 @@ public:
   void targetSendComplete();
   void ident(const std::string& ident);
 private:
-  void FDDisconnected(int sockid) override;
+  void FDDisconnected(int sockid, Core::DisconnectType reason, const std::string& details) override;
   void FDData(int sockid, char* data, unsigned int datalen) override;
   void FDSendComplete(int sockid) override;
+  void sendQueuedData();
   BncSessionClient* sessionclient;
   Ident* identp;
   int state;
@@ -36,4 +39,5 @@ private:
   std::string srcaddr;
   std::string sessiontag;
   bool paused;
+  std::list<std::vector<char>> sendqueue;
 };

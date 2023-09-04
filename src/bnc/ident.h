@@ -14,7 +14,7 @@ public:
 private:
   void FDConnected(int sockid) override;
   void FDData(int sockid, char* buf, unsigned int buflen) override;
-  void FDDisconnected(int sockid) override;
+  void FDDisconnected(int sockid, Core::DisconnectType reason, const std::string& details) override;
   void FDFail(int sockid, const std::string& err) override;
   void tick(int);
   void deactivate();

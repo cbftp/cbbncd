@@ -1,35 +1,54 @@
 #include "bncsessionclient.h"
 
+#include <cassert>
+
 #include "../core/iomanager.h"
 
 #include "../globalcontext.h"
 
 #include "bncsession.h"
 
-BncSessionClient::BncSessionClient(BncSession * parentsession) : session(parentsession), paused(false) {
+BncSessionClient::BncSessionClient(BncSession * parentsession) : session(parentsession), paused(false), connected(false) {
 }
 
-void BncSessionClient::activate(const std::string& sessiontag, const std::string& host, int port, const std::string& ident) {
+void BncSessionClient::activate(const std::string& sessiontag, const std::string& host, int port) {
   this->sessiontag = sessiontag;
-  this->ident = ident;
+  identreceived = false;
   paused = false;
+  connected = false;
   global->log("[" + sessiontag + "] Connecting to server: " + host + ":" + std::to_string(port));
   sockid = global->getIOManager()->registerTCPClientSocket(this, host, port);
 }
 
+void BncSessionClient::ident(const std::string& ident) {
+  this->identstr = ident;
+  identreceived = true;
+  checkSendIdent();
+}
+
 void BncSessionClient::disconnect() {
+  connected = false;
   global->getIOManager()->closeSocket(sockid);
 }
 
 void BncSessionClient::FDConnected(int sockid) {
-  std::string identstring = "IDNT " + ident;
-  global->log("[" + sessiontag + "] Connection established. Sending: " + identstring);
-  global->log("[" + sessiontag + "] Bouncing enabled.");
-  global->getIOManager()->sendData(sockid, identstring + "\r\n");
+  connected = true;
+  global->log("[" + sessiontag + "] Server connection established.");
+  checkSendIdent();
 }
 
-void BncSessionClient::FDDisconnected(int sockid) {
+void BncSessionClient::checkSendIdent() {
+  if (identreceived && connected) {
+    std::string identstring = "IDNT " + identstr;
+    global->log("[" + sessiontag + "] Sending: " + identstring);
+    global->log("[" + sessiontag + "] Bouncing enabled.");
+    global->getIOManager()->sendData(sockid, identstring + "\r\n");
+  }
+}
+
+void BncSessionClient::FDDisconnected(int sockid, Core::DisconnectType reason, const std::string& details) {
   global->log("[" + sessiontag + "] Server closed the connection. Disconnecting client. Session finished.");
+  connected = false;
   session->targetDisconnected();
 }
 
@@ -57,6 +76,7 @@ void BncSessionClient::sendComplete() {
   }
 }
 
-bool BncSessionClient::sendData(char* data, unsigned int datalen) {
+bool BncSessionClient::sendData(const char* data, unsigned int datalen) {
+  assert (identreceived);
   return global->getIOManager()->sendData(sockid, data, datalen);
 }

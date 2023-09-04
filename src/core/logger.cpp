@@ -11,7 +11,7 @@ std::shared_ptr<Logger> g_logger;
 
 class CoutLogger : public Logger {
   void log(const std::string& owner, const std::string& text, LogLevel level) override {
-    std::cout << toString(level) << "<" << owner << "> " << text << std::endl;
+    std::cout << toString(level) << " <" << owner << "> " << text << std::endl;
   }
 };
 

@@ -48,7 +48,7 @@ void Ident::FDData(int sockid, char* buf, unsigned int buflen) {
   deactivate();
 }
 
-void Ident::FDDisconnected(int sockid) {
+void Ident::FDDisconnected(int sockid, Core::DisconnectType reason, const std::string& details) {
   if (active) {
     global->log("[" + sessiontag + "] Client ident server closed the connection unexpectedly.");
     noIdent();

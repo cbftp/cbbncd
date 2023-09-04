@@ -47,6 +47,35 @@ void resolveHostAsync(EventReceiver* er, int sockid) {
   static_cast<IOManager*>(er)->resolveHost(sockid, true);
 }
 
+DisconnectType investigateSSLError(SocketInfo& socketinfo, const char* function, int brecv, std::string& errortext) {
+  int errorErrno = errno;
+  int sslError = SSL_get_error(socketinfo.ssl, brecv);
+  switch (sslError) {
+    case SSL_ERROR_WANT_READ:
+      return DisconnectType::NONE;
+    case SSL_ERROR_WANT_WRITE:
+      return DisconnectType::NONE;
+    case SSL_ERROR_ZERO_RETURN:
+      errortext = "Connection closed gracefully by peer";
+      return DisconnectType::GRACEFUL;
+    case SSL_ERROR_SYSCALL:
+      socketinfo.sslshutdown = false;
+      if (!errorErrno) {
+        errortext = "Connection closed abruptly by peer";
+        return DisconnectType::ABRUPT;
+      }
+      break;
+  }
+  unsigned long e = ERR_get_error();
+  char buf[util::ERR_BUF_SIZE];
+  ERR_error_string_n(e, buf, sizeof(buf));
+  errortext = std::string(function) + ": " + SSLManager::sslErrorToString(sslError) +
+                   (e ? ": " + std::string(buf) : ", return code: " +
+                   std::to_string(brecv) + ", errno: " +
+                   std::to_string(errorErrno) + " = " + util::getStrError(errorErrno));
+  return DisconnectType::ERROR;
+}
+
 } // namespace
 
 IOManager::IOManager(WorkManager& wm, TickPoke& tp)
@@ -56,7 +85,7 @@ IOManager::IOManager(WorkManager& wm, TickPoke& tp)
   , sendblockpool(std::make_shared<DataBlockPool>())
   , blocksize(blockpool.blockSize())
   , sockidcounter(0)
-  , hasdefaultinterface(false)
+  , hasbindinterface(false)
   , sessionkeycounter(0)
 {
   workmanager.addReadyNotify(this);
@@ -74,6 +103,7 @@ void IOManager::init(const std::string& prefix, int id) {
   sigaction(SIGPIPE, &sa, nullptr);
   thread.start((prefix + "-io-" + std::to_string(id)).c_str(), this);
   tickpoke.startPoke(this, "IOManager", TICKPERIOD, 0);
+  initialized.wait();
 }
 
 void IOManager::preStop() {
@@ -100,7 +130,6 @@ void IOManager::preStop() {
   socketinfo.id = sockid;
   socketinfo.type = SocketType::STOP;
   socketinfo.receiver = nullptr;
-  sockfdidmap[fd[1]] = sockid;
   socketinfomaplock.unlock();
   pollWrite(socketinfo);
 }
@@ -152,28 +181,28 @@ void IOManager::tick(int message) {
 void IOManager::pollRead(SocketInfo& socketinfo) {
   socketinfo.direction = Direction::IN;
   if (!socketinfo.paused) {
-    polling.addFDIn(socketinfo.fd);
+    polling.addFDIn(socketinfo.fd, socketinfo.id);
   }
 }
 
 void IOManager::pollWrite(SocketInfo& socketinfo) {
   socketinfo.direction = Direction::OUT;
   if (!socketinfo.paused) {
-    polling.addFDOut(socketinfo.fd);
+    polling.addFDOut(socketinfo.fd, socketinfo.id);
   }
 }
 
 void IOManager::setPollRead(SocketInfo& socketinfo) {
   socketinfo.direction = Direction::IN;
   if (!socketinfo.paused) {
-    polling.setFDIn(socketinfo.fd);
+    polling.setFDIn(socketinfo.fd, socketinfo.id);
   }
 }
 
 void IOManager::setPollWrite(SocketInfo& socketinfo) {
   socketinfo.direction = Direction::OUT;
   if (!socketinfo.paused) {
-    polling.setFDOut(socketinfo.fd);
+    polling.setFDOut(socketinfo.fd, socketinfo.id);
   }
 }
 
@@ -229,7 +258,7 @@ void IOManager::handleTCPNameResolution(SocketInfo& socketinfo) {
   struct addrinfo* result = static_cast<struct addrinfo*>(socketinfo.gaires);
   int sockfd = socket(result->ai_family, result->ai_socktype, result->ai_protocol);
   if (sockfd == -1) {
-    if (!handleError(socketinfo.receiver)) {
+    if (!handleError(socketinfo.receiver, socketinfo.id)) {
       closeSocketIntern(socketinfo.id);
       return;
     }
@@ -246,31 +275,33 @@ void IOManager::handleTCPNameResolution(SocketInfo& socketinfo) {
   }
   if (socketinfo.addrfam == AddressFamily::IPV6) {
     int yes = 1;
-    setsockopt(sockfd, SOL_IPV6, IPV6_V6ONLY, &yes, sizeof(int));
+    setsockopt(sockfd, IPPROTO_IPV6, IPV6_V6ONLY, &yes, sizeof(int));
   }
   socketinfo.fd = sockfd;
   socketinfo.type = SocketType::TCP_CONNECTING;
   socketinfo.addr = buf;
   connecttimemap[socketinfo.id] = 0;
-  sockfdidmap[sockfd] = socketinfo.id;
-  if (hasDefaultInterface()) {
+  StringResult bindto = getAddressToBind(socketinfo.addrfam, socketinfo.type);
+  if (!bindto.success) {
+    workmanager.dispatchEventFail(socketinfo.receiver, socketinfo.id, bindto.error);
+    closeSocketIntern(socketinfo.id);
+    return;
+  }
+  if (!bindto.result.empty()) {
     struct addrinfo request, *res;
     memset(&request, 0, sizeof(request));
     request.ai_family = (socketinfo.addrfam == AddressFamily::IPV4 ? AF_INET : AF_INET6);
     request.ai_socktype = SOCK_STREAM;
-    std::string interfaceaddress = (socketinfo.addrfam == AddressFamily::IPV4) ? getInterfaceAddress(getDefaultInterface()) :
-                                                                                 getInterfaceAddress6(getDefaultInterface());
-    int returnCode = getaddrinfo(interfaceaddress.c_str(), "0", &request, &res);
-    if (returnCode) {
-      if (!handleError(socketinfo.receiver)) {
-        closeSocketIntern(socketinfo.id);
-        return;
-      }
+    int returncode = getaddrinfo(bindto.result.c_str(), "0", &request, &res);
+    if (returncode) {
+      workmanager.dispatchEventFail(socketinfo.receiver, socketinfo.id, gai_strerror(returncode));
+      closeSocketIntern(socketinfo.id);
+      return;
     }
-    returnCode = bind(sockfd, res->ai_addr, res->ai_addrlen);
+    returncode = bind(sockfd, res->ai_addr, res->ai_addrlen);
     freeaddrinfo(res);
-    if (returnCode) {
-      if (!handleError(socketinfo.receiver)) {
+    if (returncode) {
+      if (!handleError(socketinfo.receiver, socketinfo.id)) {
         closeSocketIntern(socketinfo.id);
         return;
       }
@@ -280,7 +311,7 @@ void IOManager::handleTCPNameResolution(SocketInfo& socketinfo) {
   freeaddrinfo(result);
   socketinfo.gaires = nullptr;
   if (returnCode) {
-    if (!handleError(socketinfo.receiver)) {
+    if (!handleError(socketinfo.receiver, socketinfo.id)) {
       closeSocketIntern(socketinfo.id);
       return;
     }
@@ -295,6 +326,11 @@ void IOManager::handleTCPNameResolution(SocketInfo& socketinfo) {
 int IOManager::registerTCPServerSocket(EventReceiver* er, int port, AddressFamily addrfam, bool local) {
   struct addrinfo sock, *res;
   memset(&sock, 0, sizeof(sock));
+  StringResult bindto = getAddressToBind(addrfam, SocketType::TCP_SERVER);
+  if (!bindto.success) {
+    workmanager.dispatchEventFail(er, -1, bindto.error);
+    return -1;
+  }
   std::string addr;
   if (addrfam == AddressFamily::IPV4) {
     sock.ai_family = AF_INET;
@@ -304,30 +340,32 @@ int IOManager::registerTCPServerSocket(EventReceiver* er, int port, AddressFamil
     sock.ai_family = AF_INET6;
     addr = local ? "::1" : "::";
   }
+  if (!bindto.result.empty() && !local) {
+    addr = bindto.result;
+  }
   sock.ai_socktype = SOCK_STREAM;
-  int returnCode = getaddrinfo(addr.c_str(), std::to_string(port).c_str(), &sock, &res);
-  if (returnCode) {
-    if (!handleError(er)) {
-      return -1;
-    }
+  int returncode = getaddrinfo(addr.c_str(), std::to_string(port).c_str(), &sock, &res);
+  if (returncode) {
+    workmanager.dispatchEventFail(er, -1, gai_strerror(returncode));
+    return -1;
   }
   int sockfd = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
   fcntl(sockfd, F_SETFL, O_NONBLOCK);
   int yes = 1;
   setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(int));
   if (addrfam == AddressFamily::IPV6) {
-    setsockopt(sockfd, SOL_IPV6, IPV6_V6ONLY, &yes, sizeof(int));
+    setsockopt(sockfd, IPPROTO_IPV6, IPV6_V6ONLY, &yes, sizeof(int));
   }
-  returnCode = bind(sockfd, res->ai_addr, res->ai_addrlen);
+  returncode = bind(sockfd, res->ai_addr, res->ai_addrlen);
   freeaddrinfo(res);
-  if (returnCode) {
+  if (returncode) {
     if (!handleError(er)) {
       close(sockfd);
       return -1;
     }
   }
-  returnCode = listen(sockfd, 100);
-  if (returnCode) {
+  returncode = listen(sockfd, 100);
+  if (returncode) {
     if (!handleError(er)) {
       close(sockfd);
       return -1;
@@ -341,7 +379,6 @@ int IOManager::registerTCPServerSocket(EventReceiver* er, int port, AddressFamil
   socketinfo.id = sockid;
   socketinfo.type = SocketType::TCP_SERVER;
   socketinfo.receiver = er;
-  sockfdidmap[sockfd] = sockid;
   pollRead(socketinfo);
   return sockid;
 }
@@ -355,7 +392,6 @@ int IOManager::registerTCPServerSocketExternalFD(EventReceiver* er, int sockfd, 
   socketinfo.id = sockid;
   socketinfo.type = SocketType::TCP_SERVER_EXTERNAL;
   socketinfo.receiver = er;
-  sockfdidmap[sockfd] = sockid;
   pollRead(socketinfo);
   return sockid;
 }
@@ -378,7 +414,6 @@ int IOManager::registerExternalFD(EventReceiver* er, int fd) {
   socketinfo.id = sockid;
   socketinfo.type = SocketType::EXTERNAL;
   socketinfo.receiver = er;
-  sockfdidmap[fd] = sockid;
   pollRead(socketinfo);
   return sockid;
 }
@@ -397,22 +432,21 @@ int IOManager::registerUDPServerSocket(EventReceiver* er, int port, AddressFamil
   }
   sock.ai_socktype = SOCK_DGRAM;
   sock.ai_protocol = IPPROTO_UDP;
-  int returnCode = getaddrinfo(addr.c_str(), std::to_string(port).c_str(), &sock, &res);
-  if (returnCode) {
-    if (!handleError(er)) {
-      return -1;
-    }
+  int returncode = getaddrinfo(addr.c_str(), std::to_string(port).c_str(), &sock, &res);
+  if (returncode) {
+    workmanager.dispatchEventFail(er, -1, gai_strerror(returncode));
+    return -1;
   }
   int sockfd = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
   fcntl(sockfd, F_SETFL, O_NONBLOCK);
   int yes = 1;
   setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(int));
   if (addrfam == AddressFamily::IPV6) {
-    setsockopt(sockfd, SOL_IPV6, IPV6_V6ONLY, &yes, sizeof(int));
+    setsockopt(sockfd, IPPROTO_IPV6, IPV6_V6ONLY, &yes, sizeof(int));
   }
-  returnCode = bind(sockfd, res->ai_addr, res->ai_addrlen);
+  returncode = bind(sockfd, res->ai_addr, res->ai_addrlen);
   freeaddrinfo(res);
-  if (returnCode) {
+  if (returncode) {
     if (!handleError(er)) {
       close(sockfd);
       return -1;
@@ -426,7 +460,6 @@ int IOManager::registerUDPServerSocket(EventReceiver* er, int port, AddressFamil
   socketinfo.id = sockid;
   socketinfo.type = SocketType::UDP;
   socketinfo.receiver = er;
-  sockfdidmap[sockfd] = sockid;
   pollRead(socketinfo);
   return sockid;
 }
@@ -490,39 +523,11 @@ void IOManager::negotiateSSLAccept(int sockid) {
   }
 }
 
-bool IOManager::handleError(EventReceiver* er) {
+bool IOManager::handleError(EventReceiver* er, int sockid) {
   if (errno == EINPROGRESS) {
     return true;
   }
-  workmanager.dispatchEventFail(er, -1, util::getStrError(errno));
-  return false;
-}
-
-bool IOManager::investigateSSLError(int error, int sockid, int brecv) {
-  auto it = socketinfomap.find(sockid);
-  if (it == socketinfomap.end()) {
-    return false;
-  }
-  SocketInfo& socketinfo = it->second;
-  switch (error) {
-    case SSL_ERROR_WANT_READ:
-      return true;
-    case SSL_ERROR_WANT_WRITE:
-      return true;
-    case SSL_ERROR_SYSCALL:
-      if (errno == EAGAIN) {
-        setPollWrite(socketinfo);
-        return true;
-      }
-      break;
-  }
-  unsigned long e = ERR_get_error();
-  char buf[util::ERR_BUF_SIZE];
-  ERR_error_string_n(e, buf, sizeof(buf));
-  getLogger()->log("IOManager", "SSL error on connection to " + it->second.addr + ": " + std::to_string(error) +
-                             " return code: " + std::to_string(brecv) + " errno: " + util::getStrError(errno) +
-                             (e ? " String: " + std::string(buf) : ""),
-                         LogLevel::ERROR);
+  workmanager.dispatchEventFail(er, sockid, util::getStrError(errno));
   return false;
 }
 
@@ -588,7 +593,7 @@ void IOManager::closeSocketIntern(int sockid) {
   }
   SocketInfo& socketinfo = it->second;
   polling.removeFD(socketinfo.fd);
-  if (socketinfo.ssl) {
+  if (socketinfo.ssl && socketinfo.sslshutdown && !SSL_in_init(socketinfo.ssl)) {
     SSL_shutdown(socketinfo.ssl);
   }
   if (socketinfo.type != SocketType::EXTERNAL && socketinfo.type != SocketType::TCP_SERVER_EXTERNAL) {
@@ -604,7 +609,6 @@ void IOManager::closeSocketIntern(int sockid) {
     sendblockpool->returnBlock(block.rawData());
   }
   socketinfo.sendqueue.clear();
-  sockfdidmap.erase(socketinfo.fd);
   connecttimemap.erase(sockid);
   autopaused.erase(sockid);
   manuallypaused.erase(sockid);
@@ -638,22 +642,22 @@ ResolverResult IOManager::resolveHost(int sockid, bool mayblock) {
   }
   socketinfomaplock.unlock();
   struct addrinfo* result;
-  int returnCode = getaddrinfo(addr.c_str(), std::to_string(port).c_str(), &request, &result);
+  int returncode = getaddrinfo(addr.c_str(), std::to_string(port).c_str(), &request, &result);
   std::lock_guard<std::mutex> lock(socketinfomaplock);
   it = socketinfomap.find(sockid);
   if (it == socketinfomap.end()) {
-    if (!returnCode) {
+    if (!returncode) {
       freeaddrinfo(result);
     }
     return ResolverResult::SOCKID_NON_EXISTING;
   }
-  it->second.gairet = returnCode;
-  if (returnCode == EAI_NONAME && !mayblock) {
+  it->second.gairet = returncode;
+  if (returncode == EAI_NONAME && !mayblock) {
     it->second.gaiasync = true;
     return ResolverResult::WOULD_BLOCK;
   }
-  if (returnCode) {
-    it->second.gaierr = gai_strerror(returnCode);
+  if (returncode) {
+    it->second.gaierr = gai_strerror(returncode);
   }
   else {
     it->second.gaires = result;
@@ -748,30 +752,36 @@ std::string IOManager::getInterfaceAddress(int sockid) const {
   return "?";
 }
 
-std::string IOManager::getInterfaceAddress4(int sockid) const {
+StringResult IOManager::getInterfaceAddress4(int sockid) const {
   std::lock_guard<std::mutex> lock(socketinfomaplock);
   auto it = socketinfomap.find(sockid);
   if (it != socketinfomap.end()) {
     if (it->second.addrfam == AddressFamily::IPV4) {
       return it->second.localaddr;
     }
-    std::string interface = getInterfaceName(it->second.localaddr);
-    return getInterfaceAddress(interface);
+    StringResult interfaceresult = getInterfaceName(it->second.localaddr);
+    if (!interfaceresult.success) {
+      return interfaceresult;
+    }
+    return getInterfaceAddress(interfaceresult.result);
   }
-  return "?";
+  return StringResult();
 }
 
-std::string IOManager::getInterfaceAddress6(int sockid) const {
+StringResult IOManager::getInterfaceAddress6(int sockid) const {
   std::lock_guard<std::mutex> lock(socketinfomaplock);
   auto it = socketinfomap.find(sockid);
   if (it != socketinfomap.end()) {
     if (it->second.addrfam == AddressFamily::IPV6) {
       return it->second.localaddr;
     }
-    std::string interface = getInterfaceName(it->second.localaddr);
-    return getInterfaceAddress6(interface);
+    StringResult interfaceresult = getInterfaceName(it->second.localaddr);
+    if (!interfaceresult.success) {
+      return interfaceresult;
+    }
+    return getInterfaceAddress6(interfaceresult.result);
   }
-  return "?";
+  return StringResult();
 }
 
 AddressFamily IOManager::getAddressFamily(int sockid) const {
@@ -841,19 +851,18 @@ void IOManager::handleTCPPlainIn(SocketInfo& socketinfo) {
   int brecv = read(socketinfo.fd, buf, blocksize);
   if (brecv == 0) {
     blockpool.returnBlock(buf);
-    workmanager.dispatchEventDisconnected(socketinfo.receiver, socketinfo.id, socketinfo.prio);
+    workmanager.dispatchEventDisconnected(socketinfo.receiver, socketinfo.id, DisconnectType::GRACEFUL, "Connection closed by peer", socketinfo.prio);
     closeSocketIntern(socketinfo.id);
     return;
   }
   else if (brecv < 0) {
+    int error = errno;
     blockpool.returnBlock(buf);
-    if (errno == EAGAIN || errno == EWOULDBLOCK) {
+    if (error == EAGAIN || error == EWOULDBLOCK) {
       return;
     }
-    workmanager.dispatchEventDisconnected(socketinfo.receiver, socketinfo.id, socketinfo.prio);
-    getLogger()->log("IOManager", "Socket read error on established connection to " + socketinfo.addr + ": " +
-                               util::getStrError(errno),
-                           LogLevel::WARNING);
+    std::string errortext = "Socket read error: " + std::to_string(error) + " = " + util::getStrError(error);
+    workmanager.dispatchEventDisconnected(socketinfo.receiver, socketinfo.id, DisconnectType::ERROR, errortext, socketinfo.prio);
     closeSocketIntern(socketinfo.id);
     return;
   }
@@ -867,14 +876,13 @@ void IOManager::handleTCPPlainOut(SocketInfo& socketinfo) {
     DataBlock& block = socketinfo.sendqueue.front();
     int bsent = write(socketinfo.fd, block.data(), block.dataLength());
     if (bsent < 0) {
-      if (errno == EAGAIN || errno == EWOULDBLOCK) {
+      int error = errno;
+      if (error == EAGAIN || error == EWOULDBLOCK) {
           return;
       }
       if (!socketinfo.closing) {
-        workmanager.dispatchEventDisconnected(socketinfo.receiver, socketinfo.id, socketinfo.prio);
-        getLogger()->log("IOManager", "Socket write error on established connection to " + socketinfo.addr + ": " +
-                                   util::getStrError(errno),
-                               LogLevel::WARNING);
+        std::string errortext = "Socket write error: " + std::to_string(error) + " = " + util::getStrError(error);
+        workmanager.dispatchEventDisconnected(socketinfo.receiver, socketinfo.id, DisconnectType::ERROR, errortext, socketinfo.prio);
       }
       closeSocketIntern(socketinfo.id);
       return;
@@ -899,13 +907,18 @@ void IOManager::handleTCPPlainOut(SocketInfo& socketinfo) {
 void IOManager::handleTCPSSLNegotiationIn(SocketInfo& socketinfo) {
   SSL* ssl = socketinfo.ssl;
   int brecv;
+  const char* function = nullptr;
+  ERR_clear_error();
   if (socketinfo.type == SocketType::TCP_SSL_NEG_REDO_CONNECT) {
+    function = "SSL_connect";
     brecv = SSL_connect(ssl);
   }
   else if (socketinfo.type == SocketType::TCP_SSL_NEG_REDO_ACCEPT) {
+    function = "SSL_accept";
     brecv = SSL_accept(ssl);
   }
   else {
+    function = "SSL_do_handshake";
     brecv = SSL_do_handshake(ssl);
   }
   if (brecv > 0) {
@@ -918,16 +931,12 @@ void IOManager::handleTCPSSLNegotiationIn(SocketInfo& socketinfo) {
       setPollWrite(socketinfo);
     }
   }
-  else if (brecv == 0) {
-    if (!socketinfo.closing) {
-      workmanager.dispatchEventDisconnected(socketinfo.receiver, socketinfo.id, socketinfo.prio);
-    }
-    closeSocketIntern(socketinfo.id);
-  }
   else {
-    if (!investigateSSLError(SSL_get_error(ssl, brecv), socketinfo.id, brecv)) {
+    std::string errortext;
+    DisconnectType type = investigateSSLError(socketinfo, function, brecv, errortext);
+    if (type != DisconnectType::NONE) {
       if (!socketinfo.closing) {
-        workmanager.dispatchEventDisconnected(socketinfo.receiver, socketinfo.id, socketinfo.prio);
+        workmanager.dispatchEventDisconnected(socketinfo.receiver, socketinfo.id, type, errortext, socketinfo.prio);
       }
       closeSocketIntern(socketinfo.id);
     }
@@ -954,10 +963,13 @@ void IOManager::handleTCPSSLNegotiationOut(SocketInfo& socketinfo) {
     }
   }
   int ret = -1;
+  const char* function = nullptr;
   if (socketinfo.type == SocketType::TCP_SSL_NEG_CONNECT) {
+    function = "SSL_connect";
     ret = SSL_connect(ssl);
   }
   else if (socketinfo.type == SocketType::TCP_SSL_NEG_ACCEPT) {
+    function = "SSL_accept";
     ret = SSL_accept(ssl);
   }
   if (ret > 0) {
@@ -971,9 +983,11 @@ void IOManager::handleTCPSSLNegotiationOut(SocketInfo& socketinfo) {
     }
   }
   else {
-    if (!investigateSSLError(SSL_get_error(ssl, ret), socketinfo.id, ret)) {
+    std::string errortext;
+    DisconnectType type = investigateSSLError(socketinfo, function, ret, errortext);
+    if (type != DisconnectType::NONE) {
       if (!socketinfo.closing) {
-        workmanager.dispatchEventDisconnected(socketinfo.receiver, socketinfo.id, socketinfo.prio);
+        workmanager.dispatchEventDisconnected(socketinfo.receiver, socketinfo.id, type, errortext, socketinfo.prio);
       }
       closeSocketIntern(socketinfo.id);
       return;
@@ -996,6 +1010,7 @@ void IOManager::handleTCPSSLIn(SocketInfo& socketinfo) {
     char* buf = blockpool.getBlock();
     int bufpos = 0;
     while (bufpos < blocksize) {
+      ERR_clear_error();
       int brecv = SSL_read(ssl, buf + bufpos, blocksize - bufpos);
       if (brecv <= 0) {
         if (bufpos > 0) {
@@ -1006,8 +1021,10 @@ void IOManager::handleTCPSSLIn(SocketInfo& socketinfo) {
         else {
           blockpool.returnBlock(buf);
         }
-        if (!brecv || !investigateSSLError(SSL_get_error(ssl, brecv), socketinfo.id, brecv)) {
-          workmanager.dispatchEventDisconnected(socketinfo.receiver, socketinfo.id, socketinfo.prio);
+        std::string errortext;
+        DisconnectType type = investigateSSLError(socketinfo, "SSL_read", brecv, errortext);
+        if (type != DisconnectType::NONE) {
+          workmanager.dispatchEventDisconnected(socketinfo.receiver, socketinfo.id, type, errortext, socketinfo.prio);
           closeSocketIntern(socketinfo.id);
         }
         return;
@@ -1030,15 +1047,14 @@ void IOManager::handleTCPSSLOut(SocketInfo& socketinfo) {
   while (!socketinfo.sendqueue.empty()) {
     DataBlock& block = socketinfo.sendqueue.front();
     SSL* ssl = socketinfo.ssl;
+    ERR_clear_error();
     int bsent = SSL_write(ssl, block.data(), block.dataLength());
-    if (bsent < 0) {
-      int code = SSL_get_error(ssl, bsent);
-      if (code == SSL_ERROR_WANT_READ || code == SSL_ERROR_WANT_WRITE) {
-        return;
-      }
-      else {
-        if (socketinfo.closing) {
-          workmanager.dispatchEventDisconnected(socketinfo.receiver, socketinfo.id, socketinfo.prio);
+    if (bsent <= 0) {
+      std::string errortext;
+      DisconnectType type = investigateSSLError(socketinfo, "SSL_write", bsent, errortext);
+      if (type != DisconnectType::NONE) {
+        if (!socketinfo.closing) {
+          workmanager.dispatchEventDisconnected(socketinfo.receiver, socketinfo.id, type, errortext, socketinfo.prio);
         }
         closeSocketIntern(socketinfo.id);
       }
@@ -1109,7 +1125,6 @@ void IOManager::handleTCPServerIn(SocketInfo& socketinfo) {
   socketinfomap[newsockid].id = newsockid;
   socketinfomap[newsockid].type = SocketType::TCP_PLAIN_LISTEN;
   fcntl(newfd, F_SETFL, O_NONBLOCK);
-  sockfdidmap[newfd] = newsockid;
   if (!workmanager.dispatchEventNew(socketinfo.receiver, socketinfo.id,
       newsockid))
   {
@@ -1119,21 +1134,16 @@ void IOManager::handleTCPServerIn(SocketInfo& socketinfo) {
 
 void IOManager::run() {
   SSLManager::init();
-  std::list<std::pair<int, PollEvent>> fds;
-  std::list<std::pair<int, PollEvent>>::const_iterator polliter;
+  initialized.post();
+  std::list<PollEvent> events;
   std::lock_guard<std::mutex> lock(socketinfomaplock);
   while (true) {
     socketinfomaplock.unlock();
-    polling.wait(fds);
+    polling.wait(events);
     socketinfomaplock.lock();
-    for (auto& polliter : fds) {
-      int currfd = polliter.first;
-      PollEvent pollevent = polliter.second;
-      auto idit = sockfdidmap.find(currfd);
-      if (idit == sockfdidmap.end()) {
-          continue;
-      }
-      int sockid = idit->second;
+    for (auto& polliter : events) {
+      PollEventType pollevent = polliter.type;
+      int sockid = polliter.userdata;
       auto it = socketinfomap.find(sockid);
       if (it == socketinfomap.end()) {
           continue;
@@ -1144,47 +1154,47 @@ void IOManager::run() {
           handleExternalIn(socketinfo);
           break;
         case SocketType::TCP_CONNECTING:
-          if (pollevent == PollEvent::OUT) {
+          if (pollevent == PollEventType::OUT) {
             handleTCPConnectingOut(socketinfo);
           }
           break;
         case SocketType::TCP_PLAIN: // tcp plain
         case SocketType::TCP_PLAIN_LISTEN:
-          if (pollevent == PollEvent::IN) { // incoming data
+          if (pollevent == PollEventType::IN) { // incoming data
             handleTCPPlainIn(socketinfo);
           }
-          else if (pollevent == PollEvent::OUT) {
+          else if (pollevent == PollEventType::OUT) {
             handleTCPPlainOut(socketinfo);
           }
           break;
         case SocketType::TCP_SSL_NEG_CONNECT: // tcp ssl redo connect
         case SocketType::TCP_SSL_NEG_ACCEPT:  // tcp ssl accept
-          if (pollevent == PollEvent::OUT) {
+          if (pollevent == PollEventType::OUT) {
             handleTCPSSLNegotiationOut(socketinfo);
           }
           break;
         case SocketType::TCP_SSL_NEG_REDO_CONNECT: // tcp ssl redo connect
         case SocketType::TCP_SSL_NEG_REDO_ACCEPT:  // tcp ssl accept
-          if (pollevent == PollEvent::IN) { // incoming data
+          if (pollevent == PollEventType::IN) { // incoming data
             handleTCPSSLNegotiationIn(socketinfo);
           }
           break;
         case SocketType::TCP_SSL: // tcp ssl
-          if (pollevent == PollEvent::IN) { // incoming data
+          if (pollevent == PollEventType::IN) { // incoming data
             handleTCPSSLIn(socketinfo);
           }
-          else if (pollevent == PollEvent::OUT) {
+          else if (pollevent == PollEventType::OUT) {
             handleTCPSSLOut(socketinfo);
           }
           break;
         case SocketType::UDP: // udp
-          if (pollevent == PollEvent::IN) { // incoming data
+          if (pollevent == PollEventType::IN) { // incoming data
             handleUDPIn(socketinfo);
           }
           break;
         case SocketType::TCP_SERVER:          // tcp server
         case SocketType::TCP_SERVER_EXTERNAL: // also tcp server
-          if (pollevent == PollEvent::IN) { // incoming connection
+          if (pollevent == PollEventType::IN) { // incoming connection
             handleTCPServerIn(socketinfo);
           }
           break;
@@ -1233,31 +1243,57 @@ std::list<std::pair<std::string, std::string>> IOManager::listInterfaces(bool ip
   return addrs;
 }
 
-std::string IOManager::getDefaultInterface() const {
-  return defaultinterface;
+std::string IOManager::getBindInterface() const {
+  return bindinterface;
 }
 
-void IOManager::setDefaultInterface(const std::string& interface) {
-  if (interface.empty() || getInterfaceAddress(interface) == "?") {
-    if (hasdefaultinterface) {
-      hasdefaultinterface = false;
-      getLogger()->log("IOManager", "Default network interface removed", LogLevel::INFO);
+std::string IOManager::getBindAddress() const {
+  return bindaddress;
+}
+
+void IOManager::setBindInterface(const std::string& interface) {
+  if (interface.empty()) {
+    if (hasbindinterface) {
+      hasbindinterface = false;
+      getLogger()->log("IOManager", "Bind network interface removed", LogLevel::INFO);
     }
+    return;
   }
-  else {
-    if (hasdefaultinterface == false || defaultinterface != interface) {
-      defaultinterface = interface;
-      hasdefaultinterface = true;
-      getLogger()->log("IOManager", "Default network interface set to: " + interface, LogLevel::INFO);
+  if (!getInterfaceAddress(interface).success) {
+    getLogger()->log("IOManager", "Failed to find interface address for: " + interface, LogLevel::ERROR);
+    return;
+  }
+  if (hasbindinterface == false || bindinterface != interface) {
+    bindinterface = interface;
+    hasbindinterface = true;
+    getLogger()->log("IOManager", "Bind network interface set to: " + interface, LogLevel::INFO);
+  }
+}
+
+void IOManager::setBindAddress(const std::string& address) {
+  if (address.empty()) {
+    if (hasbindaddress) {
+      hasbindaddress = false;
+      getLogger()->log("IOManager", "Bind IP address removed", LogLevel::INFO);
     }
+    return;
+  }
+  if (!hasbindaddress && bindaddress != address) {
+    bindaddress = address;
+    hasbindaddress = true;
+    getLogger()->log("IOManager", "Bind IP address set to: " + address, LogLevel::INFO);
   }
 }
 
-bool IOManager::hasDefaultInterface() const {
-  return hasdefaultinterface;
+bool IOManager::hasBindInterface() const {
+  return hasbindinterface;
 }
 
-std::string IOManager::getInterfaceAddress(const std::string& interface) const {
+bool IOManager::hasBindAddress() const {
+  return hasbindaddress;
+}
+
+StringResult IOManager::getInterfaceAddress(const std::string& interface) const {
   int fd;
   struct ifreq ifr;
   fd = socket(AF_INET, SOCK_DGRAM, 0);
@@ -1265,7 +1301,7 @@ std::string IOManager::getInterfaceAddress(const std::string& interface) const {
   strncpy(ifr.ifr_name, interface.c_str(), IFNAMSIZ - 1);
   if (ioctl(fd, SIOCGIFADDR, &ifr) < 0) {
     close(fd);
-    return "?";
+    return StringResultError("No IPv4 address found for " + interface);
   }
   close(fd);
   char buf[INET_ADDRSTRLEN];
@@ -1273,13 +1309,13 @@ std::string IOManager::getInterfaceAddress(const std::string& interface) const {
   return buf;
 }
 
-std::string IOManager::getInterfaceAddress6(const std::string& interface) const {
+StringResult IOManager::getInterfaceAddress6(const std::string& interface) const {
   struct ifaddrs *ifaddr, *ifa;
   int s;
   char host[NI_MAXHOST];
   if (getifaddrs(&ifaddr) == -1) {
     getLogger()->log("IOManager", std::string("Failed to list network interfaces: ") + util::getStrError(errno), LogLevel::ERROR);
-    return "?";
+    return StringResult();
   }
   for (ifa = ifaddr; ifa != nullptr && ifa->ifa_addr != nullptr; ifa = ifa->ifa_next) {
     if (interface == ifa->ifa_name && ifa->ifa_addr->sa_family == AF_INET6) {
@@ -1296,7 +1332,7 @@ std::string IOManager::getInterfaceAddress6(const std::string& interface) const 
     }
   }
   freeifaddrs(ifaddr);
-  return "?";
+  return StringResultError("No suitable IPv6 address found for " + interface);
 }
 
 std::string IOManager::compactIPv6Address(const std::string& address) {
@@ -1311,13 +1347,14 @@ std::string IOManager::compactIPv6Address(const std::string& address) {
   return buf;
 }
 
-std::string IOManager::getInterfaceName(const std::string& address) const {
+StringResult IOManager::getInterfaceName(const std::string& address) const {
   struct ifaddrs *ifaddr, *ifa;
   int s;
   char host[NI_MAXHOST];
   if (getifaddrs(&ifaddr) == -1) {
-    getLogger()->log("IOManager", std::string("Failed to list network interfaces: ") + util::getStrError(errno), LogLevel::ERROR);
-    return "?";
+    std::string err = "Failed to list network interfaces: " + util::getStrError(errno);
+    getLogger()->log("IOManager", err, LogLevel::ERROR);
+    return StringResultError(err);
   }
   for (ifa = ifaddr; ifa != nullptr && ifa->ifa_addr != nullptr; ifa = ifa->ifa_next) {
     int family = ifa->ifa_addr->sa_family;
@@ -1340,7 +1377,24 @@ std::string IOManager::getInterfaceName(const std::string& address) const {
     }
   }
   freeifaddrs(ifaddr);
-  return "?";
+  return StringResultError("No matching interface found");
+}
+
+StringResult IOManager::getAddressToBind(const AddressFamily addrfam, const SocketType socktype) {
+  std::string bindto;
+  if (hasBindAddress()) {
+    bindto = bindaddress;
+  }
+  else if (hasBindInterface()) {
+    struct addrinfo request;
+    memset(&request, 0, sizeof(request));
+    request.ai_family = (addrfam == AddressFamily::IPV4 ? AF_INET : AF_INET6);
+    request.ai_socktype = (socktype != SocketType::UDP ? SOCK_STREAM : SOCK_DGRAM);
+    StringResult interfaceaddress = (addrfam == AddressFamily::IPV4) ? getInterfaceAddress(getBindInterface()) :
+                                                                       getInterfaceAddress6(getBindInterface());
+    return interfaceaddress;
+  }
+  return bindto;
 }
 
 void IOManager::workerReady() {
@@ -1352,11 +1406,15 @@ void IOManager::workerReady() {
     }
     if (manuallypaused.find(sockid) == manuallypaused.end()) {
       siit->second.paused = false;
+      if (siit->second.receiver == nullptr) {
+        // if no EventReceiver has been registered for the socket yet
+        continue;
+      }
       if (siit->second.direction == Direction::IN) {
-        polling.addFDIn(siit->second.fd);
+        polling.addFDIn(siit->second.fd, sockid);
       }
       else {
-        polling.addFDOut(siit->second.fd);
+        polling.addFDOut(siit->second.fd, sockid);
       }
     }
   }
@@ -1392,10 +1450,10 @@ void IOManager::resume(int sockid) {
   if (autopaused.find(sockid) == autopaused.end()) {
     it->second.paused = false;
     if (it->second.direction == Direction::IN) {
-      polling.addFDIn(it->second.fd);
+      polling.addFDIn(it->second.fd, sockid);
     }
     else {
-      polling.addFDOut(it->second.fd);
+      polling.addFDOut(it->second.fd, sockid);
     }
   }
 }

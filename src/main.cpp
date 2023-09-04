@@ -8,6 +8,7 @@
 #include <cstdio>
 #include <cstring>
 #include <iostream>
+#include <list>
 #include <string>
 #include <sstream>
 
@@ -66,20 +67,49 @@ void daemonize() {
   open("/dev/null", O_WRONLY);
 }
 
-void parseData(const std::string& data, int& listenport, std::string& host, int& port, bool& ident) {
-    size_t sep1 = data.find(";");
-    size_t sep2 = data.find(";", sep1 + 1);
-    size_t portsep = data.find(":", sep1 + 1);
-    listenport = str2Int(data.substr(0, sep1));
-    port = 21;
-    if (portsep != std::string::npos) {
-      host = data.substr(sep1 + 1, portsep - sep1 - 1);
-      port = str2Int(data.substr(portsep + 1, sep2 - portsep));
+std::list<std::string> split(const std::string& in, const std::string& sep) {
+  std::list<std::string> out;
+  size_t start = 0;
+  size_t end;
+  size_t seplength = sep.length();
+  while ((end = in.find(sep, start)) != std::string::npos) {
+    out.push_back(in.substr(start, end - start));
+    start = end + seplength;
+  }
+  out.push_back(in.substr(start));
+  return out;
+}
+
+void parseData(const std::string& data, int& listenport, std::string& host, int& port, bool& ident, bool& bind, std::string& ipif) {
+  std::list<std::string> params = split(data, ";");
+  for (const std::string& param : params) {
+    size_t sep = param.find("=");
+    std::string key = param.substr(0, sep);
+    std::string value = param.substr(sep + 1);
+    if (key == "port") {
+      port = std::stol(value);
     }
-    else {
-      host = data.substr(sep1 + 1, sep2 - sep1);
+    else if (key == "host") {
+      size_t portsep = value.find(":");
+      port = 21;
+      if (portsep != std::string::npos) {
+        host = value.substr(0, portsep);
+        port = std::stol(value.substr(portsep + 1));
+      }
+      else {
+        host = value;;
+      }
     }
-    ident = data.substr(sep2 + 1) != "n";
+    else if (key == "ident") {
+      ident = value == "true";
+    }
+    else if (key == "bind") {
+      bind = value == "true";
+    }
+    else if (key == "ipif") {
+      ipif = value;
+    }
+  }
 }
 
 bool isAscii(const Core::BinaryData& data) {
@@ -115,11 +145,13 @@ int main(int argc, char** argv) {
     }
     data = std::string(decrypteddata.begin(), decrypteddata.end());
   }
-  int listenport;
-  std::string host;
-  int port;
-  bool ident;
-  parseData(data, listenport, host, port, ident);
+  int listenport = 65432;
+  std::string host = "ftp.example.com";
+  int port = 21;
+  bool ident = true;
+  bool bind = false;
+  std::string ipif = "0.0.0.0";
+  parseData(data, listenport, host, port, ident, bind, ipif);
 
   if (daemon) {
     daemonize();
@@ -131,6 +163,22 @@ int main(int argc, char** argv) {
   Core::WorkManager* wm = new Core::WorkManager();
   Core::TickPoke* tp = new Core::TickPoke(*wm);
   Core::IOManager* iom = new Core::IOManager(*wm, *tp);
+  if (bind) {
+    std::list<std::pair<std::string, std::string>> ifs = iom->listInterfaces();
+    bool isif = false;
+    for (const std::pair<std::string, std::string>& interface : ifs) {
+      if (ipif == interface.first) {
+        isif = true;
+        break;
+      }
+    }
+    if (isif) {
+      iom->setBindInterface(ipif);
+    }
+    else {
+      iom->setBindAddress(ipif);
+    }
+  }
   global->linkComponents(wm, iom, tp);
 
   new Bnc(listenport, host, port, ident);
