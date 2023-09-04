@@ -39,7 +39,7 @@ class TrafficBncSession;
 
 class BncSessionClient : private Core::EventReceiver {
 public:
-  BncSessionClient(BncSession* parentsession, bool traffic);
+  BncSessionClient(BncSession* parentsession, bool traffic, bool noidnt);
   ~BncSessionClient();
   void activate(const std::string& sessiontag, Core::AddressFamily clientaddrfam, const std::string& clientaddr, Core::AddressFamily siteaddrfam, const std::string& sitehost, int siteport, const std::string& ifaddr4, const std::string& ifaddr6);
   void ident(const std::string& ident);
@@ -79,4 +79,5 @@ private:
   Core::AddressFamily siteaddrfam;
   std::string clientaddr;
   std::string siteifaddr;
+  bool noidnt;
 };

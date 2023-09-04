@@ -1,7 +1,7 @@
 #pragma once
 
 #include <map>
-#include <set>
+#include <vector>
 
 #include "core/eventreceiver.h"
 
@@ -15,9 +15,8 @@ public:
   void markPortUnavailable(int port);
 private:
   void tick(int message) override;
+  std::vector<bool> availableports;
   std::map<int, unsigned int> unavailableports;
-  std::set<int> availableports;
-  std::set<int> outstandingports;
   int firstport;
   int lastport;
 };

@@ -1,5 +1,7 @@
 #include "listenportmanager.h"
 
+#include <cassert>
+#include <cstdlib>
 #include <ctime>
 #include <list>
 
@@ -16,6 +18,7 @@ const std::string tag = "[ListenPortManager] ";
 
 ListenPortManager::ListenPortManager(int firstport, int lastport) : firstport(firstport), lastport(lastport) {
   global->getTickPoke()->startPoke(this, "ListenPortManager", tickinterval, 0);
+  srand(time(nullptr));
   setPortRange(firstport, lastport);
 }
 
@@ -24,41 +27,38 @@ ListenPortManager::~ListenPortManager() {
 }
 
 void ListenPortManager::setPortRange(int first, int last) {
+  assert (last > first);
   firstport = first;
   lastport = last;
-  availableports.clear();
-  for (int i = first; i <= last; ++i) {
-    availableports.insert(i);
+  availableports.resize(last - first + 1);
+  for (size_t i = 0; i < availableports.size(); ++i) {
+    availableports[i] = true;
   }
-  std::list<int> eraselist;
-  for (int outstandingport : outstandingports) {
-    if (outstandingport < firstport || outstandingport > lastport) {
-      eraselist.push_back(outstandingport);
-      continue;
-    }
-    availableports.erase(outstandingport);
-  }
-  for (int eraseport : eraselist) {
-    outstandingports.erase(eraseport);
-  }
+  unavailableports.clear();
 }
 
 int ListenPortManager::acquirePort() {
-  if (availableports.empty()) {
-    return -1;
+  size_t startpos = rand() % availableports.size();
+  size_t pos = startpos;
+  while (true) {
+    if (availableports[pos]) {
+      availableports[pos] = false;
+      return firstport + pos;
+    }
+    pos = pos + 1 % availableports.size();
+    if (pos == startpos) {
+      return -1;
+    }
   }
-  int port = *availableports.begin();
-  availableports.erase(port);
-  outstandingports.insert(port);
-  return port;
+  return -1;
 }
 
 void ListenPortManager::releasePort(int port) {
   if (port < firstport || port > lastport) {
     return;
   }
-  outstandingports.erase(port);
-  availableports.insert(port);
+  availableports[port - firstport] = true;
+  unavailableports.erase(port);
 }
 
 void ListenPortManager::markPortUnavailable(int port) {
@@ -66,8 +66,7 @@ void ListenPortManager::markPortUnavailable(int port) {
     return;
   }
   global->log(tag + "Marking port as unavailable: " + std::to_string(port));
-  availableports.erase(port);
-  outstandingports.erase(port);
+  availableports[port - firstport] = false;
   unavailableports[port] = time(nullptr);
 }
 

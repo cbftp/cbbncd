@@ -8,25 +8,27 @@
 
 #include "bncsession.h"
 
-Bnc::Bnc(int listenport, Core::AddressFamily addrfam, const std::string& host, int port, bool ident,
+Bnc::Bnc(int listenport, const std::list<Address>& siteaddrs, bool ident, bool noidnt,
   bool traffic, int pasvportfirst, int pasvportlast) : listenport(listenport),
-  addrfam(addrfam), host(host), port(port), ident(ident), traffic(traffic),
-  pasvportfirst(pasvportfirst), pasvportlast(pasvportlast)
+  siteaddrs(siteaddrs.begin(), siteaddrs.end()), ident(ident), noidnt(noidnt), traffic(traffic),
+  pasvportfirst(pasvportfirst), pasvportlast(pasvportlast), nextsiteaddr(0)
 {
   global->getIOManager()->registerTCPServerSocket(this, listenport, Core::AddressFamily::IPV4);
   global->getIOManager()->registerTCPServerSocket(this, listenport, Core::AddressFamily::IPV6);
 }
 
 void Bnc::FDNew(int sockid, int newsockid) {
+  const Address& siteaddr = siteaddrs.at(nextsiteaddr);
+  nextsiteaddr = (nextsiteaddr + 1) % siteaddrs.size();
   std::list<BncSession*>::iterator it;
   for (it = sessions.begin(); it != sessions.end(); it++) {
     if (!(*it)->active()) {
-      (*it)->activate(newsockid);
+      (*it)->activate(newsockid, siteaddr);
       return;
     }
   }
-  BncSession* session = new BncSession(listenport, addrfam, host, port, ident, traffic);
-  session->activate(newsockid);
+  BncSession* session = new BncSession(listenport, ident, noidnt, traffic);
+  session->activate(newsockid, siteaddr);
   sessions.push_back(session);
 }
 

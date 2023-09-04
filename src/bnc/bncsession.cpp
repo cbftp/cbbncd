@@ -10,14 +10,29 @@
 #include "bncsessionclient.h"
 #include "ident.h"
 
-BncSession::BncSession(int listenport, Core::AddressFamily addrfam, const std::string& host, int port, bool ident, bool traffic) :
-  sessionclient(new BncSessionClient(this, traffic)),
-  identp(ident ? new Ident(this) : nullptr),
+namespace {
+
+std::string colonReplace(const std::string& in) {
+  std::string out;
+  for (size_t i = 0; i < in.length(); ++i) {
+    if (in[i] == ':') {
+      out += "\\x3A";
+    }
+    else {
+      out += in[i];
+    }
+  }
+  return out;
+}
+
+}
+
+BncSession::BncSession(int listenport, bool ident, bool noidnt, bool traffic) :
+  sessionclient(new BncSessionClient(this, traffic, noidnt)),
+  identp((ident && !noidnt) ? new Ident(this) : nullptr),
+  noidnt(noidnt),
   state(State::DISCONNECTED),
   listenport(listenport),
-  siteaddrfam(addrfam),
-  sitehost(host),
-  siteport(port),
   sockid(-1),
   paused(false)
 {
@@ -27,8 +42,11 @@ bool BncSession::active() {
   return state != State::DISCONNECTED;
 }
 
-void BncSession::activate(int sockid) {
+void BncSession::activate(int sockid, const Address& addr) {
   this->sockid = sockid;
+  siteaddrfam = addr.addrfam;
+  sitehost = addr.host;
+  siteport = addr.port;
   paused = false;
   global->getIOManager()->registerTCPServerClientSocket(this, sockid);
   srcaddr = global->getIOManager()->getSocketAddress(sockid);
@@ -51,14 +69,25 @@ void BncSession::activate(int sockid) {
   }
   else {
     state = State::ESTABLISHED;
-    sessionclient->ident("*@" + srcaddr + ":" + srcaddr);
+    if (!noidnt) {
+      std::string nocolonsrcaddr;
+      for (size_t i = 0; i < srcaddr.length(); ++i) {
+        if (srcaddr[i] == ':') {
+          nocolonsrcaddr += "\x3A";
+        }
+        else {
+          nocolonsrcaddr += srcaddr[i];
+        }
+      }
+      sessionclient->ident("*@" + srcaddr + ":" + colonReplace(srcaddr));
+    }
   }
 }
 
 void BncSession::ident(const std::string& ident) {
   if (state == State::IDENT) {
     state = State::ESTABLISHED;
-    sessionclient->ident(ident + '@' + util::ipFormat(srcaddrfam, srcaddr) + ":" + util::ipFormat(srcaddrfam, srcaddr));
+    sessionclient->ident(ident + '@' + srcaddr + ":" + colonReplace(srcaddr));
     sendQueuedData();
   }
 }

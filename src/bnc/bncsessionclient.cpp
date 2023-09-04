@@ -18,9 +18,9 @@ const std::string exhaustedresponse = "502 cbbncd: passive port range exhausted.
 
 }
 
-BncSessionClient::BncSessionClient(BncSession * parentsession, bool traffic) :
+BncSessionClient::BncSessionClient(BncSession * parentsession, bool traffic, bool noidnt) :
   session(parentsession), paused(false), connected(false),
-  tlsstate(TLSState::NONE), traffic(traffic)
+  tlsstate(TLSState::NONE), traffic(traffic), noidnt(noidnt)
 {
   if (traffic) {
     tbnc = std::unique_ptr<TrafficBncSession>(new TrafficBncSession());
@@ -54,6 +54,7 @@ void BncSessionClient::activate(const std::string& sessiontag, Core::AddressFami
 }
 
 void BncSessionClient::ident(const std::string& ident) {
+  assert (!noidnt);
   this->identstr = ident;
   identreceived = true;
   checkSendIdent();
@@ -70,7 +71,12 @@ void BncSessionClient::disconnect() {
 void BncSessionClient::FDConnected(int sockid) {
   connected = true;
   global->log("[" + sessiontag + "] Server connection established.");
-  checkSendIdent();
+  if (noidnt) {
+    global->log("[" + sessiontag + "] Control channel forwarding enabled.");
+  }
+  else {
+    checkSendIdent();
+  }
   siteifaddr = global->getIOManager()->getInterfaceAddress(sockid);
   siteaddrfam = global->getIOManager()->getAddressFamily(sockid);
 }
@@ -262,7 +268,7 @@ void BncSessionClient::sendComplete() {
 }
 
 bool BncSessionClient::sendData(const char* data, unsigned int datalen) {
-  assert (identreceived);
+  assert (identreceived || noidnt);
   if (!traffic) {
     return global->getIOManager()->sendData(sockid, data, datalen);
   }

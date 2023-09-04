@@ -23,6 +23,9 @@ application: core
 	$(eval LASTIDENT := $(shell cat .last 2>/dev/null|grep 'ident='|cut -d '=' -f 2))
 	$(eval LASTIDENT := $(shell if [ -z "$(LASTIDENT)" ] || [ "$(LASTIDENT)" != "false" ]; then echo "true"; else echo "false"; fi))
 	$(eval USEIDENT := $(shell if [ -z "$(IDENT)" ] && [ -z "$(DATA)" ]; then echo $$(read -p "Ident lookup [$(shell if [ $(LASTIDENT) == "false" ]; then echo "n"; else echo "y"; fi)]: "; if [ -n "$$REPLY" ]; then if [ "$$REPLY" != "n" ]; then echo "true"; else echo "false"; fi; else echo "$(LASTIDENT)"; fi); else echo $(IDENT); fi))
+	$(eval LASTNOIDNT := $(shell cat .last 2>/dev/null|grep 'noidnt='|cut -d '=' -f 2))
+	$(eval LASTNOIDNT := $(shell if [ -z "$(LASTNOIDNT)" ] || [ "$(LASTNOIDNT)" != "true" ]; then echo "false"; else echo "true"; fi))
+	$(eval USENOIDNT := $(shell if [ "$(USEIDENT)" == "false" ]; then if [ -z "$(NOIDNT)" ] && [ -z "$(DATA)" ]; then echo $$(read -p "Disable IDNT completely [$(shell if [ $(LASTNOIDNT) == "false" ]; then echo "n"; else echo "y"; fi)]: "; if [ -n "$$REPLY" ]; then if [ "$$REPLY" != "y" ]; then echo "false"; else echo "true"; fi; else echo $(LASTNOIDNT); fi); else echo $(NOIDNT); fi; else echo "false"; fi))
 	$(eval LASTBIND := $(shell cat .last 2>/dev/null|grep 'bind='|cut -d '=' -f 2))
 	$(eval LASTBIND := $(shell if [ -z "$(LASTBIND)" ] || [ "$(LASTBIND)" != "true" ]; then echo "false"; else echo "true"; fi))
 	$(eval USEBIND := $(shell if [ -z "$(BIND)" ] && [ -z "$(DATA)" ]; then echo $$(read -p "Bind to specific IPs or interface [$(shell if [ $(LASTBIND) == "false" ]; then echo "n"; else echo "y"; fi)]: "; if [ -n "$$REPLY" ]; then if [ "$$REPLY" != "n" ]; then echo "true"; else echo "false"; fi; else echo "$(LASTBIND)"; fi); else echo $(BIND); fi))
@@ -52,8 +55,8 @@ application: core
 	$(eval USEKEY := $(shell if [ -z "$(USEKEY)" ] && [ -n "$(GENKEY)" ]; then echo $(GENKEY); else echo $(USEKEY); fi))
 	@if [ "$(USETRAFFIC)" == "true" ] && [ -z "$(USEKEY)" ]; then echo -e "ERROR: No private key found."; exit 1; fi
 	$(eval ENCRYPT := $(shell if ( [ "$(USETRAFFIC)" == "false" ] || [ -n "$(USEKEY)" ]) && [ -z "$(DATA)" ] && ( [ -z "$(PORT)" ] || [ -z "$(HOST)" ] || [ -z "$(IDENT)" ] || [ -z "$(IPIF)" ] || [ -z "$(TRAFFIC)" ]); then echo $$(read -p "Encrypt data [y]: "; if [ -z "$$REPLY" ] || [ "$$REPLY" != "n" ]; then echo "1"; else echo ""; fi); fi))
-	$(eval LASTDATA := port=$(USEPORT);host=$(USEHOST);ident=$(USEIDENT);bind=$(USEBIND);ipif=$(USEIPIF);traffic=$(USETRAFFIC);pasvportrange=$(USEPASVPORTRANGE);autogencert=$(USEAUTOGENCERT);certfile=$(USECERTFILE);keyfile=$(USEKEYFILE))
-	$(eval AGGDATA := port=$(USEPORT);host=$(USEHOST);ident=$(USEIDENT);bind=$(USEBIND);ipif=$(USEIPIF);traffic=$(USETRAFFIC);pasvportrange=$(USEPASVPORTRANGE);cert=$(USECERT);key=$(USEKEY))
+	$(eval LASTDATA := port=$(USEPORT);host=$(USEHOST);ident=$(USEIDENT);noidnt=$(USENOIDNT);bind=$(USEBIND);ipif=$(USEIPIF);traffic=$(USETRAFFIC);pasvportrange=$(USEPASVPORTRANGE);autogencert=$(USEAUTOGENCERT);certfile=$(USECERTFILE);keyfile=$(USEKEYFILE))
+	$(eval AGGDATA := port=$(USEPORT);host=$(USEHOST);ident=$(USEIDENT);noidnt=$(USENOIDNT);bind=$(USEBIND);ipif=$(USEIPIF);traffic=$(USETRAFFIC);pasvportrange=$(USEPASVPORTRANGE);cert=$(USECERT);key=$(USEKEY))
 	$(eval ENCDATA := $(shell if [ -n "$(ENCRYPT)" ]; then echo -n "$(AGGDATA)" | $(AES256_CMD); fi))
 	@rm -f .last
 	@if [ -z "$(DATA)" ] && ( [ -z "$(ENCRYPT)" ] || [ -z "$(ENCDATA)" ] ); then echo "$(LASTDATA)" | sed s/\;/\\n/g > .last; fi

@@ -7,6 +7,8 @@
 #include "../core/eventreceiver.h"
 #include "../core/types.h"
 
+#include "../address.h"
+
 class BncSessionClient;
 class Ident;
 
@@ -18,9 +20,9 @@ enum class State {
 
 class BncSession : private Core::EventReceiver {
 public:
-  BncSession(int listenport, Core::AddressFamily addrfam, const std::string& host, int port, bool ident, bool traffic);
+  BncSession(int listenport, bool ident, bool noidnt, bool traffic);
   bool active();
-  void activate(int sockid);
+  void activate(int sockid, const Address& addr);
   void targetDisconnected();
   bool targetData(char* data, unsigned int datalen);
   void targetSendComplete();
@@ -34,6 +36,7 @@ private:
   void sendQueuedData();
   BncSessionClient* sessionclient;
   Ident* identp;
+  bool noidnt;
   State state;
   int listenport;
   Core::AddressFamily siteaddrfam;

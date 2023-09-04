@@ -30,10 +30,9 @@ namespace {
 
 struct Configuration {
   int listenport = 65432;
-  std::string host = "ftp.example.com";
-  int port = 21;
-  Core::AddressFamily addrfam;
+  std::list<Address> siteaddrs;
   bool ident = true;
+  bool noidnt = false;
   bool bind = false;
   std::string ipif = "0.0.0.0";
   bool traffic = false;
@@ -93,13 +92,13 @@ Configuration parseData(const std::string& data) {
       cfg.listenport = std::stol(value);
     }
     else if (key == "host") {
-      Address addr = parseAddress(value);
-      cfg.addrfam = addr.addrfam;
-      cfg.host = addr.host;
-      cfg.port = addr.port;
+      cfg.siteaddrs = parseAddresses(value);
     }
     else if (key == "ident") {
       cfg.ident = value == "true";
+    }
+    else if (key == "noidnt") {
+      cfg.noidnt = value == "true";
     }
     else if (key == "bind") {
       cfg.bind = value == "true";
@@ -159,6 +158,9 @@ int main(int argc, char** argv) {
   else {
     global->setVerbose(true);
     global->log("Starting in verbose foreground mode. Use -d to start in daemon mode.");
+    global->log("Listening for incoming connections on port " + std::to_string(cfg.listenport));
+    std::string idnt = cfg.noidnt ? "disabled" : "enabled";
+    global->log("IDNT sending is " + idnt);
     std::string traffic = cfg.traffic ? "enabled" : "disabled";
     global->log("Traffic bouncing is " + traffic);
   }
@@ -188,7 +190,7 @@ int main(int argc, char** argv) {
 
   std::shared_ptr<ListenPortManager> lpm = std::make_shared<ListenPortManager>(cfg.pasvportfirst, cfg.pasvportlast);
   global->linkComponents(lpm);
-  std::shared_ptr<Bnc> bnc = std::make_shared<Bnc>(cfg.listenport, cfg.addrfam, cfg.host, cfg.port, cfg.ident, cfg.traffic, cfg.pasvportfirst, cfg.pasvportlast);
+  std::shared_ptr<Bnc> bnc = std::make_shared<Bnc>(cfg.listenport, cfg.siteaddrs, cfg.ident, cfg.noidnt, cfg.traffic, cfg.pasvportfirst, cfg.pasvportlast);
   wm->init("cbbncd");
   iom->init("cbbncd");
   if (!cfg.cert.empty() && !cfg.key.empty()) {
